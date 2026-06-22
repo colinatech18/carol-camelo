@@ -1,22 +1,29 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, ClipboardList, FileText, Settings, LogOut, Brain } from "lucide-react";
+import { LayoutDashboard, Users, ClipboardList, Settings, LogOut, Brain } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 
-const items = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { to: "/pacientes", label: "Pacientes", icon: Users },
-  { to: "/formularios", label: "Formulários", icon: ClipboardList },
-  { to: "/configuracoes", label: "Configurações", icon: Settings },
+const ROLE_LABEL: Record<string, string> = {
+  admin: "Administrador",
+  psicologo: "Psicólogo",
+  psiquiatra: "Psiquiatra",
+  recepcionista: "Recepcionista",
+};
+
+const allItems = [
+  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "psicologo", "psiquiatra", "recepcionista"] },
+  { to: "/pacientes", label: "Pacientes", icon: Users, roles: ["admin", "psicologo", "psiquiatra", "recepcionista"] },
+  { to: "/formularios", label: "Formulários", icon: ClipboardList, roles: ["admin", "psicologo"] },
+  { to: "/configuracoes", label: "Configurações", icon: Settings, roles: ["admin"] },
 ];
 
 export function Sidebar() {
   const path = useRouterState({ select: (s) => s.location.pathname });
   const { user, logout } = useAuth();
   const navigate = useNavigate();
-
-  const roleLabel = user?.role === "admin" ? "Administrador" : user?.role === "psychiatrist" ? "Psiquiatra" : "Psicólogo";
+  const roleLabel = ROLE_LABEL[user?.role ?? ""] ?? "Usuário";
+  const items = allItems.filter((it) => it.roles.includes(user?.role ?? ""));
 
   return (
     <aside className="hidden md:flex sticky top-0 h-screen w-64 shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground">
@@ -29,9 +36,7 @@ export function Sidebar() {
           <div className="text-xs text-muted-foreground">Acompanhamento clínico</div>
         </div>
       </div>
-
       <nav className="flex-1 overflow-y-auto px-3 py-4 space-y-1">
-
         {items.map((it) => {
           const active = path.startsWith(it.to);
           const Icon = it.icon;
@@ -52,7 +57,6 @@ export function Sidebar() {
           );
         })}
       </nav>
-
       <div className="shrink-0 border-t border-sidebar-border p-3 space-y-2">
         <div className="px-2 py-1">
           <div className="text-sm font-medium truncate">{user?.name}</div>
