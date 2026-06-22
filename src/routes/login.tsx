@@ -5,7 +5,6 @@ import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { USE_MOCK } from "@/services/api";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/login")({
@@ -17,8 +16,8 @@ function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
   const search = useSearch({ from: "/login" });
-  const [email, setEmail] = useState("admin@clinica.com");
-  const [password, setPassword] = useState("admin123");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
   const submit = async (e: React.FormEvent) => {
@@ -70,18 +69,6 @@ function LoginPage() {
             {busy && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}
             Entrar
           </Button>
-
-          {USE_MOCK && (
-            <div className="rounded-md border border-border bg-muted/40 p-3 text-xs text-muted-foreground space-y-1">
-              <div className="font-medium text-foreground">Modo demonstração</div>
-              <div>Defina <code>VITE_API_URL</code> para apontar para sua API. Contas de teste:</div>
-              <ul className="space-y-0.5 mt-1">
-                <li>· admin@clinica.com / admin123</li>
-                <li>· psicologo@clinica.com / senha123</li>
-                <li>· psiquiatra@clinica.com / senha123</li>
-              </ul>
-            </div>
-          )}
         </form>
       </div>
     </div>
