@@ -135,15 +135,9 @@ function ProfileTab() {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement | null>(null);
 
-  const stored = readLS<{ name?: string }>(LS.profile, {});
-  const [name, setName] = useState<string>(stored.name || user?.name || "");
+  const [name, setName] = useState<string>(user?.name || "");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
-
-  useEffect(() => {
-    if (!stored.name && user?.name) setName(user.name);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.name]);
 
   async function save() {
     if (password || confirm) {
