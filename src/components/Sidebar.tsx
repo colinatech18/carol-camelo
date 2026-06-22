@@ -1,4 +1,3 @@
-cat > src/components/Sidebar.tsx << 'EOF'
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
 import { LayoutDashboard, Users, ClipboardList, Settings, LogOut, Brain, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
@@ -99,4 +98,3 @@ export function Sidebar() {
     </aside>
   );
 }
-EOF
