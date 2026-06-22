@@ -87,6 +87,7 @@ function PatientsList() {
           phone: form.whatsapp,
           program_start_date: form.startDate,
           status: form.status,
+          responsible_id: form.responsibleId || null,
         }).eq("id", editing.id)) as any;
         if (error) throw error;
       } else {
@@ -99,6 +100,7 @@ function PatientsList() {
           status: form.status,
           notes: form.notes,
           public_token: token,
+          responsible_id: form.responsibleId || null,
         })) as any;
         if (error) throw error;
         const url = `${window.location.origin}/formulario/${token}`;
