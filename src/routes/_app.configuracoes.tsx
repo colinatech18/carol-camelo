@@ -74,7 +74,6 @@ function SettingsPage() {
           {user?.role === "admin" && <TabsTrigger value="geral">Configuração Geral</TabsTrigger>}
           {user?.role === "admin" && <TabsTrigger value="integracoes">Integrações</TabsTrigger>}
           <TabsTrigger value="perfil">Meu Perfil</TabsTrigger>
-          <TabsTrigger value="aparencia">Aparência</TabsTrigger>
         </TabsList>
 
         {user?.role === "admin" && (
@@ -100,9 +99,6 @@ function SettingsPage() {
 
         <TabsContent value="perfil">
           <ProfileTab />
-        </TabsContent>
-
-        <TabsContent value="aparencia">
           <AppearanceTab />
         </TabsContent>
       </Tabs>
