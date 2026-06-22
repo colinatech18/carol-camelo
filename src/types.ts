@@ -1,4 +1,4 @@
-export type Role = "admin" | "psychologist" | "psychiatrist";
+export type Role = "admin" | "psicologo" | "psiquiatra" | "recepcionista";
 
 export interface User {
   id: string;
