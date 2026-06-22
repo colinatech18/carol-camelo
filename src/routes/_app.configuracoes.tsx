@@ -26,13 +26,15 @@ import {
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import type { Role, User } from "@/types";
+import { supabase } from "@/lib/supabase";
 
 export const Route = createFileRoute("/_app/configuracoes")({ component: SettingsPage });
 
 const ROLE_LABEL: Record<Role, string> = {
   admin: "Administrador",
-  psychologist: "Psicólogo",
-  psychiatrist: "Psiquiatra",
+  psicologo: "Psicólogo",
+  psiquiatra: "Psiquiatra",
+  recepcionista: "Recepcionista",
 };
 
 const LS = {
@@ -149,18 +151,17 @@ function ProfileTab() {
     applyTheme(prefs.darkMode);
   }, [prefs]);
 
-  function save() {
+  async function save() {
     if (password || confirm) {
-      if (password !== confirm) {
-        toast.error("As senhas não coincidem");
-        return;
-      }
-      if (password.length < 6) {
-        toast.error("A senha deve ter ao menos 6 caracteres");
-        return;
-      }
+      if (password !== confirm) { toast.error("As senhas não coincidem"); return; }
+      if (password.length < 6) { toast.error("A senha deve ter ao menos 6 caracteres"); return; }
+      const { error } = await supabase.auth.updateUser({ password });
+      if (error) { toast.error(error.message); return; }
     }
-    writeLS(LS.profile, { name });
+    if (user?.id) {
+      const { error } = (await supabase.from("profiles").update({ name }).eq("id", user.id)) as any;
+      if (error) { toast.error(error.message); return; }
+    }
     setPassword("");
     setConfirm("");
     toast.success("Alterações salvas");
@@ -319,47 +320,41 @@ function ProfileTab() {
 
 function TeamCard() {
   const qc = useQueryClient();
-  const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: api.auth.listUsers });
   const [open, setOpen] = useState(false);
-  const [editing, setEditing] = useState<User | null>(null);
-  const [form, setForm] = useState({ name: "", email: "", role: "psychologist" as Role, password: "" });
+  const [form, setForm] = useState({ name: "", email: "", role: "psicologo" as Role, password: "" });
 
-  function openCreate() {
-    setEditing(null);
-    setForm({ name: "", email: "", role: "psychologist", password: "" });
-    setOpen(true);
-  }
-  function openEdit(u: User) {
-    setEditing(u);
-    setForm({ name: u.name, email: u.email, role: u.role, password: "" });
-    setOpen(true);
-  }
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: async () => {
+      const { data, error } = (await supabase.from("profiles").select("*")) as any;
+      if (error) throw error;
+      return data as User[];
+    },
+  });
 
   const createUser = useMutation({
-    mutationFn: () => api.auth.createUser(form),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["users"] });
-      setOpen(false);
-      toast.success("Membro adicionado");
+    mutationFn: async () => {
+      const res = await fetch("/api/create-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
     },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["users"] }); setOpen(false); toast.success("Membro adicionado"); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro"),
   });
+
   const removeUser = useMutation({
-    mutationFn: (id: string) => api.auth.deleteUser(id),
+    mutationFn: async (id: string) => {
+      const { error } = (await supabase.from("profiles").delete().eq("id", id)) as any;
+      if (error) throw error;
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["users"] }); toast.success("Removido"); },
   });
 
   function handleSubmit() {
-    if (editing) {
-      // Edit not supported by API mock — emulate by removing & recreating
-      toast.info("Edição de membro: ajuste de perfil em breve");
-      setOpen(false);
-      return;
-    }
-    if (!form.name || !form.email || !form.password) {
-      toast.error("Preencha nome, e-mail e senha");
-      return;
-    }
+    if (!form.name || !form.email || !form.password) { toast.error("Preencha nome, e-mail e senha"); return; }
     createUser.mutate();
   }
 
@@ -372,14 +367,12 @@ function TeamCard() {
         </div>
         <Dialog open={open} onOpenChange={setOpen}>
           <DialogTrigger asChild>
-            <Button size="sm" onClick={openCreate}>
+            <Button size="sm" onClick={() => setForm({ name: "", email: "", role: "psicologo", password: "" })}>
               <UserPlus className="h-4 w-4 mr-2" /> Adicionar membro
             </Button>
           </DialogTrigger>
           <DialogContent>
-            <DialogHeader>
-              <DialogTitle>{editing ? "Editar membro" : "Adicionar membro"}</DialogTitle>
-            </DialogHeader>
+            <DialogHeader><DialogTitle>Adicionar membro</DialogTitle></DialogHeader>
             <div className="space-y-3">
               <div className="space-y-1.5">
                 <Label>Nome</Label>
@@ -395,21 +388,20 @@ function TeamCard() {
                   <SelectTrigger><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="admin">Administrador</SelectItem>
-                    <SelectItem value="psychologist">Psicólogo</SelectItem>
-                    <SelectItem value="psychiatrist">Psiquiatra</SelectItem>
+                    <SelectItem value="psicologo">Psicólogo</SelectItem>
+                    <SelectItem value="psiquiatra">Psiquiatra</SelectItem>
+                    <SelectItem value="recepcionista">Recepcionista</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
-              {!editing && (
-                <div className="space-y-1.5">
-                  <Label>Senha provisória</Label>
-                  <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-                </div>
-              )}
+              <div className="space-y-1.5">
+                <Label>Senha provisória</Label>
+                <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+              </div>
             </div>
             <DialogFooter>
               <Button variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
-              <Button onClick={handleSubmit}>{editing ? "Salvar" : "Adicionar"}</Button>
+              <Button onClick={handleSubmit} disabled={createUser.isPending}>Adicionar</Button>
             </DialogFooter>
           </DialogContent>
         </Dialog>
@@ -422,14 +414,9 @@ function TeamCard() {
                 <div className="text-sm font-medium">{u.name}</div>
                 <div className="text-xs text-muted-foreground">{u.email} · {ROLE_LABEL[u.role]}</div>
               </div>
-              <div className="flex items-center gap-1">
-                <Button size="icon" variant="ghost" onClick={() => openEdit(u)}>
-                  <Pencil className="h-4 w-4" />
-                </Button>
-                <Button size="icon" variant="ghost" onClick={() => removeUser.mutate(u.id)}>
-                  <Trash2 className="h-4 w-4 text-danger" />
-                </Button>
-              </div>
+              <Button size="icon" variant="ghost" onClick={() => removeUser.mutate(u.id)}>
+                <Trash2 className="h-4 w-4 text-danger" />
+              </Button>
             </div>
           ))}
         </div>
