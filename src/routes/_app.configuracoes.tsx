@@ -99,7 +99,9 @@ function SettingsPage() {
 
         <TabsContent value="perfil">
           <ProfileTab />
-          <AppearanceTab />
+          <div className="mt-8">
+            <AppearanceTab />
+          </div>
         </TabsContent>
       </Tabs>
     </div>
