@@ -61,6 +61,7 @@ function writeLS<T>(key: string, value: T) {
 }
 
 function SettingsPage() {
+  const { user } = useAuth();
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-5xl mx-auto">
       <div>
@@ -68,19 +69,28 @@ function SettingsPage() {
         <p className="text-sm text-muted-foreground">Equipe, automações e integrações.</p>
       </div>
 
-      <Tabs defaultValue="geral" className="space-y-6">
+      <Tabs defaultValue={user?.role === "admin" ? "geral" : "perfil"} className="space-y-6">
         <TabsList>
-          <TabsTrigger value="geral">Configuração Geral</TabsTrigger>
-          <TabsTrigger value="integracoes">Integrações</TabsTrigger>
+          {user?.role === "admin" && <TabsTrigger value="geral">Configuração Geral</TabsTrigger>}
+          {user?.role === "admin" && <TabsTrigger value="integracoes">Integrações</TabsTrigger>}
           <TabsTrigger value="perfil">Meu Perfil</TabsTrigger>
           <TabsTrigger value="aparencia">Aparência</TabsTrigger>
         </TabsList>
 
-        <TabsContent value="geral" className="space-y-6">
-          <TeamCard />
-          <DefaultFormCard />
-          <NotificationsCard />
-        </TabsContent>
+        {user?.role === "admin" && (
+          <TabsContent value="geral" className="space-y-6">
+            <TeamCard />
+            <DefaultFormCard />
+            <NotificationsCard />
+          </TabsContent>
+        )}
+
+        {user?.role === "admin" && (
+          <TabsContent value="integracoes" className="space-y-6">
+            <WhatsappCard />
+            <ExternalEhrCard />
+          </TabsContent>
+        )}
 
         <TabsContent value="integracoes" className="space-y-6">
           <WhatsappCard />

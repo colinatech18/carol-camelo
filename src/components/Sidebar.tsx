@@ -16,7 +16,7 @@ const allItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "psicologo", "psiquiatra", "recepcionista"] },
   { to: "/pacientes", label: "Pacientes", icon: Users, roles: ["admin", "psicologo", "psiquiatra", "recepcionista"] },
   { to: "/formularios", label: "Formulários", icon: ClipboardList, roles: ["admin", "psicologo"] },
-  { to: "/configuracoes", label: "Configurações", icon: Settings, roles: ["admin"] },
+  { to: "/configuracoes", label: "Configurações", icon: Settings, roles: ["admin", "psicologo", "psiquiatra", "recepcionista"] },
 ];
 
 export function Sidebar() {
