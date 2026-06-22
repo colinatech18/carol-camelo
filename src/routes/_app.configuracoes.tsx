@@ -137,20 +137,6 @@ function ProfileTab() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?.name]);
 
-  const [prefs, setPrefs] = useState<Preferences>(() =>
-    readLS<Preferences>(LS.preferences, {
-      darkMode: readLS<boolean>(LS.theme, false),
-      emailNotifications: true,
-      language: "pt-BR",
-    }),
-  );
-
-  useEffect(() => {
-    writeLS(LS.preferences, prefs);
-    writeLS(LS.theme, prefs.darkMode);
-    applyTheme(prefs.darkMode);
-  }, [prefs]);
-
   async function save() {
     if (password || confirm) {
       if (password !== confirm) { toast.error("As senhas não coincidem"); return; }
@@ -258,56 +244,6 @@ function ProfileTab() {
 
             <div className="flex justify-end">
               <Button onClick={save}>Salvar alterações</Button>
-            </div>
-          </CardContent>
-        </Card>
-      </section>
-
-      <Separator />
-
-      {/* PREFERÊNCIAS */}
-      <section className="grid lg:grid-cols-10 gap-6">
-        <div className="lg:col-span-3">
-          <h3 className="text-base font-semibold">Preferências</h3>
-          <p className="text-sm text-muted-foreground mt-1">
-            Personalize sua experiência no sistema.
-          </p>
-        </div>
-        <Card className="lg:col-span-7">
-          <CardContent className="p-6 space-y-5">
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-sm font-medium">Modo escuro</div>
-                <p className="text-xs text-muted-foreground">
-                  Alterna o tema da interface entre claro e escuro.
-                </p>
-              </div>
-              <Switch
-                checked={prefs.darkMode}
-                onCheckedChange={(v) => setPrefs({ ...prefs, darkMode: v })}
-              />
-            </div>
-            <div className="flex items-start justify-between gap-4">
-              <div>
-                <div className="text-sm font-medium">Receber notificações por e-mail</div>
-                <p className="text-xs text-muted-foreground">
-                  Resumos diários e alertas críticos.
-                </p>
-              </div>
-              <Switch
-                checked={prefs.emailNotifications}
-                onCheckedChange={(v) => setPrefs({ ...prefs, emailNotifications: v })}
-              />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Idioma</Label>
-              <Select value={prefs.language} onValueChange={(v) => setPrefs({ ...prefs, language: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="pt-BR">Português (BR)</SelectItem>
-                  <SelectItem value="en" disabled>English (em breve)</SelectItem>
-                </SelectContent>
-              </Select>
             </div>
           </CardContent>
         </Card>
