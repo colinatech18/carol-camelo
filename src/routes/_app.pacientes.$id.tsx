@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Send, Copy, Check } from "lucide-react";
+import { ArrowLeft, Send, Copy, Check, FileText } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -137,6 +137,11 @@ function PatientDetail() {
               <SelectItem value="completed">Concluído</SelectItem>
             </SelectContent>
           </Select>
+          <Button asChild variant="outline">
+            <Link to="/prontuario/$id" params={{ id }}>
+              <FileText className="h-4 w-4 mr-2" /> Prontuário
+            </Link>
+          </Button>
           <Button variant="outline" onClick={copyLink}>
             {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />} Link do formulário
           </Button>

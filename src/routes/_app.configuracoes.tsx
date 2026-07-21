@@ -35,6 +35,9 @@ const ROLE_LABEL: Record<Role, string> = {
   psicologo: "Psicólogo",
   psiquiatra: "Psiquiatra",
   recepcionista: "Recepcionista",
+  // Aliases em inglês (dados do mock) mapeados para os mesmos rótulos.
+  psychologist: "Psicólogo",
+  psychiatrist: "Psiquiatra",
 };
 
 const LS = {

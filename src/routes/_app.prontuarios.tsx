@@ -21,7 +21,7 @@ function RecordsHub() {
         <CardHeader><CardTitle className="text-base">Pacientes</CardTitle></CardHeader>
         <CardContent className="divide-y">
           {patients.map((p) => (
-            <Link key={p.id} to="/pacientes/$id" params={{ id: p.id }} className="flex items-center justify-between py-3 hover:bg-muted/40 -mx-3 px-3 rounded-md transition">
+            <Link key={p.id} to="/prontuario/$id" params={{ id: p.id }} className="flex items-center justify-between py-3 hover:bg-muted/40 -mx-3 px-3 rounded-md transition">
               <div className="flex items-center gap-3 min-w-0">
                 <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                 <div className="min-w-0">

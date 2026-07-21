@@ -1,4 +1,11 @@
-export type Role = "admin" | "psicologo" | "psiquiatra" | "recepcionista";
+export type Role =
+  | "admin"
+  | "psicologo"
+  | "psiquiatra"
+  | "recepcionista"
+  // Aliases em inglês usados pelos dados semeados no mock (mockBackend.ts).
+  | "psychologist"
+  | "psychiatrist";
 
 export interface User {
   id: string;

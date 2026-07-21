@@ -18,6 +18,7 @@ import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppConfiguracoesRouteImport } from './routes/_app.configuracoes'
 import { Route as AppPacientesIndexRouteImport } from './routes/_app.pacientes.index'
 import { Route as AppFormulariosIndexRouteImport } from './routes/_app/formularios/index'
+import { Route as AppProntuarioIdRouteImport } from './routes/_app.prontuario.$id'
 import { Route as AppPacientesIdRouteImport } from './routes/_app.pacientes.$id'
 import { Route as AppFormulariosIdEditRouteImport } from './routes/_app.formularios.$id.edit'
 
@@ -65,6 +66,11 @@ const AppFormulariosIndexRoute = AppFormulariosIndexRouteImport.update({
   path: '/formularios/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppProntuarioIdRoute = AppProntuarioIdRouteImport.update({
+  id: '/prontuario/$id',
+  path: '/prontuario/$id',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppPacientesIdRoute = AppPacientesIdRouteImport.update({
   id: '/pacientes/$id',
   path: '/pacientes/$id',
@@ -84,6 +90,7 @@ export interface FileRoutesByFullPath {
   '/prontuarios': typeof AppProntuariosRoute
   '/formulario/$token': typeof FormularioTokenRoute
   '/pacientes/$id': typeof AppPacientesIdRoute
+  '/prontuario/$id': typeof AppProntuarioIdRoute
   '/formularios/': typeof AppFormulariosIndexRoute
   '/pacientes/': typeof AppPacientesIndexRoute
   '/formularios/$id/edit': typeof AppFormulariosIdEditRoute
@@ -96,6 +103,7 @@ export interface FileRoutesByTo {
   '/formulario/$token': typeof FormularioTokenRoute
   '/': typeof AppIndexRoute
   '/pacientes/$id': typeof AppPacientesIdRoute
+  '/prontuario/$id': typeof AppProntuarioIdRoute
   '/formularios': typeof AppFormulariosIndexRoute
   '/pacientes': typeof AppPacientesIndexRoute
   '/formularios/$id/edit': typeof AppFormulariosIdEditRoute
@@ -110,6 +118,7 @@ export interface FileRoutesById {
   '/formulario/$token': typeof FormularioTokenRoute
   '/_app/': typeof AppIndexRoute
   '/_app/pacientes/$id': typeof AppPacientesIdRoute
+  '/_app/prontuario/$id': typeof AppProntuarioIdRoute
   '/_app/formularios/': typeof AppFormulariosIndexRoute
   '/_app/pacientes/': typeof AppPacientesIndexRoute
   '/_app/formularios/$id/edit': typeof AppFormulariosIdEditRoute
@@ -124,6 +133,7 @@ export interface FileRouteTypes {
     | '/prontuarios'
     | '/formulario/$token'
     | '/pacientes/$id'
+    | '/prontuario/$id'
     | '/formularios/'
     | '/pacientes/'
     | '/formularios/$id/edit'
@@ -136,6 +146,7 @@ export interface FileRouteTypes {
     | '/formulario/$token'
     | '/'
     | '/pacientes/$id'
+    | '/prontuario/$id'
     | '/formularios'
     | '/pacientes'
     | '/formularios/$id/edit'
@@ -149,6 +160,7 @@ export interface FileRouteTypes {
     | '/formulario/$token'
     | '/_app/'
     | '/_app/pacientes/$id'
+    | '/_app/prontuario/$id'
     | '/_app/formularios/'
     | '/_app/pacientes/'
     | '/_app/formularios/$id/edit'
@@ -225,6 +237,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppFormulariosIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/prontuario/$id': {
+      id: '/_app/prontuario/$id'
+      path: '/prontuario/$id'
+      fullPath: '/prontuario/$id'
+      preLoaderRoute: typeof AppProntuarioIdRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/pacientes/$id': {
       id: '/_app/pacientes/$id'
       path: '/pacientes/$id'
@@ -248,6 +267,7 @@ interface AppRouteChildren {
   AppProntuariosRoute: typeof AppProntuariosRoute
   AppIndexRoute: typeof AppIndexRoute
   AppPacientesIdRoute: typeof AppPacientesIdRoute
+  AppProntuarioIdRoute: typeof AppProntuarioIdRoute
   AppFormulariosIndexRoute: typeof AppFormulariosIndexRoute
   AppPacientesIndexRoute: typeof AppPacientesIndexRoute
   AppFormulariosIdEditRoute: typeof AppFormulariosIdEditRoute
@@ -259,6 +279,7 @@ const AppRouteChildren: AppRouteChildren = {
   AppProntuariosRoute: AppProntuariosRoute,
   AppIndexRoute: AppIndexRoute,
   AppPacientesIdRoute: AppPacientesIdRoute,
+  AppProntuarioIdRoute: AppProntuarioIdRoute,
   AppFormulariosIndexRoute: AppFormulariosIndexRoute,
   AppPacientesIndexRoute: AppPacientesIndexRoute,
   AppFormulariosIdEditRoute: AppFormulariosIdEditRoute,
