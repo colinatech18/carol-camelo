@@ -15,6 +15,7 @@ import {
 } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
@@ -36,6 +37,31 @@ const TYPE_LABEL: Record<NoteType, string> = {
   psicologica: "Psicológica",
   psiquiatrica: "Psiquiátrica",
 };
+// Faixa colorida à esquerda de cada anotação, para distinguir a categoria de relance.
+const TYPE_ACCENT: Record<NoteType, string> = {
+  psicologica: "border-l-primary",
+  psiquiatrica: "border-l-violet-500",
+};
+
+const AVATAR_PALETTE = [
+  "bg-blue-500/20 text-blue-300",
+  "bg-emerald-500/20 text-emerald-300",
+  "bg-amber-500/20 text-amber-300",
+  "bg-rose-500/20 text-rose-300",
+  "bg-violet-500/20 text-violet-300",
+  "bg-cyan-500/20 text-cyan-300",
+];
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/);
+  const first = parts[0]?.[0] ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return (first + last).toUpperCase();
+}
+function avatarColor(name: string) {
+  let sum = 0;
+  for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+  return AVATAR_PALETTE[sum % AVATAR_PALETTE.length];
+}
 
 function PatientRecord() {
   const { id } = Route.useParams();
@@ -131,11 +157,21 @@ function PatientRecord() {
         <ArrowLeft className="h-4 w-4 mr-1" /> Voltar ao paciente
       </Link>
 
-      <div>
-        <h1 className="text-2xl font-semibold">Prontuário</h1>
-        <p className="text-sm text-muted-foreground">
-          {patient ? patient.name : "Carregando…"} · anotações clínicas (psicológica e psiquiátrica)
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-semibold">Prontuário</h1>
+          <p className="text-sm text-muted-foreground">
+            {patient ? patient.name : "Carregando…"} · anotações clínicas
+          </p>
+        </div>
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-primary" /> Psicológica
+          </span>
+          <span className="inline-flex items-center gap-1.5">
+            <span className="h-2 w-2 rounded-full bg-violet-500" /> Psiquiátrica
+          </span>
+        </div>
       </div>
 
       <Card>
@@ -170,29 +206,39 @@ function PatientRecord() {
         )}
         {grouped.map(([day, dayNotes]) => (
           <div key={day} className="space-y-3">
-            <h2 className="text-sm font-medium text-muted-foreground capitalize">
-              {format(parseISO(day), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
-            </h2>
-            {dayNotes.map((n) => (
-              <Card key={n.id}>
-                <CardContent className="p-4 space-y-2">
+            <div className="flex items-center gap-3">
+              <h2 className="shrink-0 text-xs font-semibold uppercase tracking-wide text-muted-foreground capitalize">
+                {format(parseISO(day), "EEEE, dd 'de' MMMM 'de' yyyy", { locale: ptBR })}
+              </h2>
+              <div className="h-px flex-1 bg-border" />
+            </div>
+            {dayNotes.map((n) => {
+              const author = authorName(n.author_id);
+              return (
+                <div
+                  key={n.id}
+                  className={cn("rounded-lg border bg-card p-4 space-y-2 border-l-4", TYPE_ACCENT[n.note_type])}
+                >
                   <div className="flex items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 min-w-0">
                       <Badge variant={n.note_type === "psicologica" ? "default" : "secondary"}>
                         {TYPE_LABEL[n.note_type]}
                       </Badge>
-                      <span className="text-xs text-muted-foreground">
-                        {authorName(n.author_id)}
+                      <span className="flex items-center gap-1.5 min-w-0">
+                        <span className={cn("h-6 w-6 shrink-0 rounded-full flex items-center justify-center text-[10px] font-semibold", avatarColor(author))}>
+                          {initials(author)}
+                        </span>
+                        <span className="text-xs text-muted-foreground truncate">{author}</span>
                       </span>
                     </div>
-                    <span className="text-xs text-muted-foreground">
+                    <span className="shrink-0 text-xs text-muted-foreground">
                       {format(parseISO(n.created_at), "HH:mm", { locale: ptBR })}
                     </span>
                   </div>
                   <p className="text-sm whitespace-pre-wrap">{n.content}</p>
-                </CardContent>
-              </Card>
-            ))}
+                </div>
+              );
+            })}
           </div>
         ))}
       </div>
