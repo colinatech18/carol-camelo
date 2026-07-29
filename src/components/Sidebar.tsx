@@ -1,5 +1,5 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, ClipboardList, Settings, LogOut, Brain, ChevronLeft, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Users, ClipboardList, FileText, Settings, LogOut, Brain, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -15,6 +15,7 @@ const ROLE_LABEL: Record<string, string> = {
 const allItems = [
   { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "psicologo", "psiquiatra", "recepcionista"] },
   { to: "/pacientes", label: "Pacientes", icon: Users, roles: ["admin", "psicologo", "psiquiatra", "recepcionista"] },
+  { to: "/prontuarios", label: "Prontuários", icon: FileText, roles: ["admin", "psicologo", "psiquiatra", "recepcionista"] },
   { to: "/formularios", label: "Formulários", icon: ClipboardList, roles: ["admin", "psicologo"] },
   { to: "/configuracoes", label: "Configurações", icon: Settings, roles: ["admin", "psicologo", "psiquiatra", "recepcionista"] },
 ];
