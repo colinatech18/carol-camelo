@@ -12,12 +12,39 @@ import { Badge } from "@/components/ui/badge";
 import { CriticalityBadge } from "@/components/CriticalityBadge";
 import { useEnrichedPatients } from "@/hooks/useEnrichedPatients";
 import { supabase } from "@/lib/supabase";
+import { cn } from "@/lib/utils";
 import { toast } from "sonner";
 import type { Patient } from "@/types";
 
 export const Route = createFileRoute("/_app/pacientes/")({ component: PatientsList });
 
 const STATUS_LABEL = { active: "Ativo", completed: "Concluído", paused: "Pausado" } as const;
+
+const AVATAR_PALETTE = [
+  "bg-blue-500/20 text-blue-300",
+  "bg-emerald-500/20 text-emerald-300",
+  "bg-amber-500/20 text-amber-300",
+  "bg-rose-500/20 text-rose-300",
+  "bg-violet-500/20 text-violet-300",
+  "bg-cyan-500/20 text-cyan-300",
+];
+function initials(name: string) {
+  const parts = name.trim().split(/\s+/);
+  const first = parts[0]?.[0] ?? "";
+  const last = parts.length > 1 ? parts[parts.length - 1][0] : "";
+  return (first + last).toUpperCase();
+}
+function avatarColor(name: string) {
+  let sum = 0;
+  for (let i = 0; i < name.length; i++) sum += name.charCodeAt(i);
+  return AVATAR_PALETTE[sum % AVATAR_PALETTE.length];
+}
+const CRIT_BAR: Record<string, string> = {
+  red: "bg-red-500",
+  yellow: "bg-yellow-500",
+  green: "bg-green-500",
+  unknown: "bg-muted-foreground/40",
+};
 
 type PatientForm = {
   name: string;
@@ -138,20 +165,26 @@ function PatientsList() {
           <div className="divide-y">
             {filtered.map((p) => {
               const responsible = users.find((u) => u.id === p.responsibleId);
+              const meta = [p.email, p.whatsapp, responsible?.name].filter(Boolean).join(" · ");
+              const pct = Math.round((p.programDay / 30) * 100);
               return (
-                <div key={p.id} className="flex items-center justify-between gap-4 p-4 hover:bg-muted/40 transition">
-                  <Link to="/pacientes/$id" params={{ id: p.id }} className="flex items-center gap-4 flex-1 min-w-0">
+                <div key={p.id} className="flex items-center gap-3 p-4 hover:bg-muted/40 transition">
+                  <Link to="/pacientes/$id" params={{ id: p.id }} className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className={cn("h-10 w-10 shrink-0 rounded-full flex items-center justify-center text-sm font-semibold", avatarColor(p.name))}>
+                      {initials(p.name)}
+                    </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <div className="text-sm font-medium truncate">{p.name}</div>
-                        <Badge variant="outline">{STATUS_LABEL[p.status]}</Badge>
+                        <span className="text-sm font-medium truncate">{p.name}</span>
+                        <Badge variant="outline" className="shrink-0">{STATUS_LABEL[p.status]}</Badge>
                       </div>
-                      <div className="text-xs text-muted-foreground mt-0.5 truncate">
-                        {p.email} · {p.whatsapp} · {responsible?.name ?? "—"}
-                      </div>
+                      <div className="text-xs text-muted-foreground mt-0.5 truncate">{meta || "—"}</div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <div className="text-xs text-muted-foreground">Dia {p.programDay}/30</div>
+                    <div className="hidden sm:flex w-28 shrink-0 flex-col gap-1">
+                      <div className="text-xs text-muted-foreground text-right">Dia {p.programDay}/30</div>
+                      <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                        <div className={cn("h-full rounded-full transition-all", CRIT_BAR[p.criticality])} style={{ width: `${pct}%` }} />
+                      </div>
                     </div>
                     <CriticalityBadge level={p.criticality} />
                   </Link>
