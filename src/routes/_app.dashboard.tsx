@@ -65,7 +65,11 @@ function DashboardPage() {
   const respondedToday = filtered.filter((p) => p.responses.some((r) => r.date === todayStr)).length;
   const responseRate = filtered.length ? Math.round((respondedToday / filtered.length) * 100) : 0;
 
-  const noResponseRecent = filtered.filter((p) => (p.daysSinceLast ?? 999) >= 2);
+  // Do mais dias sem responder para o menos (null = nunca respondeu = topo, mesmo
+  // critério do filtro, que trata null como 999).
+  const noResponseRecent = filtered
+    .filter((p) => (p.daysSinceLast ?? 999) >= 2)
+    .sort((a, b) => (b.daysSinceLast ?? 999) - (a.daysSinceLast ?? 999));
 
   const chartData = useMemo(() => {
     const days: Record<number, number[]> = {};
@@ -134,38 +138,44 @@ function DashboardPage() {
           <CardHeader>
             <CardTitle className="text-base">Sem resposta há 2+ dias</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-2">
-            {noResponseRecent.length === 0 && <p className="text-sm text-muted-foreground">Todos em dia 👏</p>}
-            {noResponseRecent.map((p) => (
-              <div key={p.id} className="rounded-md border p-3 hover:bg-muted/40 transition space-y-2.5">
-                <div className="flex items-center gap-3">
-                  <div className={cn("h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold", avatarColor(p.name))}>
-                    {initials(p.name)}
-                  </div>
-                  <Link to="/pacientes/$id" params={{ id: p.id }} className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{p.name}</div>
-                    <div className="text-xs text-muted-foreground truncate">
-                      Última resposta: {p.daysSinceLast ?? "—"} dias atrás
+          <CardContent>
+            {noResponseRecent.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Todos em dia 👏</p>
+            ) : (
+              // Mostra ~3 pacientes; acima disso rola dentro do cartão.
+              <div className="space-y-2 max-h-[21rem] overflow-y-auto pr-1">
+                {noResponseRecent.map((p) => (
+                  <div key={p.id} className="rounded-md border p-3 hover:bg-muted/40 transition space-y-2.5">
+                    <div className="flex items-center gap-3">
+                      <div className={cn("h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold", avatarColor(p.name))}>
+                        {initials(p.name)}
+                      </div>
+                      <Link to="/pacientes/$id" params={{ id: p.id }} className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate">{p.name}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          Última resposta: {p.daysSinceLast ?? "—"} dias atrás
+                        </div>
+                      </Link>
                     </div>
-                  </Link>
-                </div>
-                <div className="flex items-center justify-between gap-2 pl-12">
-                  <CriticalityBadge level={p.criticality} />
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      e.stopPropagation();
-                      toast.success(`Lembrete enviado para ${p.name}`);
-                    }}
-                  >
-                    <MessageSquare className="h-3.5 w-3.5" />
-                    Lembrete
-                  </Button>
-                </div>
+                    <div className="flex items-center justify-between gap-2 pl-12">
+                      <CriticalityBadge level={p.criticality} />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toast.success(`Lembrete enviado para ${p.name}`);
+                        }}
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        Lembrete
+                      </Button>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            )}
           </CardContent>
         </Card>
       </div>
