@@ -137,27 +137,33 @@ function DashboardPage() {
           <CardContent className="space-y-2">
             {noResponseRecent.length === 0 && <p className="text-sm text-muted-foreground">Todos em dia 👏</p>}
             {noResponseRecent.map((p) => (
-              <div key={p.id} className="flex items-center gap-3 rounded-md border p-3 hover:bg-muted/40 transition">
-                <div className={cn("h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold", avatarColor(p.name))}>
-                  {initials(p.name)}
+              <div key={p.id} className="rounded-md border p-3 hover:bg-muted/40 transition space-y-2.5">
+                <div className="flex items-center gap-3">
+                  <div className={cn("h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold", avatarColor(p.name))}>
+                    {initials(p.name)}
+                  </div>
+                  <Link to="/pacientes/$id" params={{ id: p.id }} className="min-w-0 flex-1">
+                    <div className="text-sm font-medium truncate">{p.name}</div>
+                    <div className="text-xs text-muted-foreground truncate">
+                      Última resposta: {p.daysSinceLast ?? "—"} dias atrás
+                    </div>
+                  </Link>
                 </div>
-                <Link to="/pacientes/$id" params={{ id: p.id }} className="min-w-0 flex-1">
-                  <div className="text-sm font-medium truncate">{p.name}</div>
-                  <div className="text-xs text-muted-foreground">Última: {p.daysSinceLast ?? "—"} dias atrás</div>
-                </Link>
-                <CriticalityBadge level={p.criticality} />
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    e.stopPropagation();
-                    toast.success(`Lembrete enviado para ${p.name}`);
-                  }}
-                >
-                  <MessageSquare className="h-3.5 w-3.5" />
-                  Lembrete
-                </Button>
+                <div className="flex items-center justify-between gap-2 pl-12">
+                  <CriticalityBadge level={p.criticality} />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      toast.success(`Lembrete enviado para ${p.name}`);
+                    }}
+                  >
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    Lembrete
+                  </Button>
+                </div>
               </div>
             ))}
           </CardContent>
