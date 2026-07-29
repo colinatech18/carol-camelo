@@ -1,11 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Send, Copy, Check, FileText } from "lucide-react";
+import { ArrowLeft, Send, Copy, Check, FileText, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CriticalityBadge } from "@/components/CriticalityBadge";
 import { supabase } from "@/lib/supabase";
@@ -20,6 +24,15 @@ import type { Patient, ResponseEntry } from "@/types";
 export const Route = createFileRoute("/_app/pacientes/$id")({ component: PatientDetail });
 
 const STATUS_LABEL = { active: "Ativo", completed: "Concluído", paused: "Pausado" } as const;
+
+type EditForm = {
+  name: string;
+  email: string;
+  whatsapp: string;
+  startDate: string;
+  responsibleId: string;
+  status: "active" | "paused" | "completed";
+};
 
 function PatientDetail() {
   const { id } = Route.useParams();
@@ -94,6 +107,55 @@ function PatientDetail() {
     },
   });
 
+  const toggleActive = (checked: boolean) => updateStatus.mutate(checked ? "active" : "paused");
+
+  const [editOpen, setEditOpen] = useState(false);
+  const [form, setForm] = useState<EditForm>({
+    name: "",
+    email: "",
+    whatsapp: "",
+    startDate: "",
+    responsibleId: "",
+    status: "active",
+  });
+
+  function openEditDialog() {
+    if (!patient) return;
+    setForm({
+      name: patient.name,
+      email: patient.email,
+      whatsapp: patient.whatsapp,
+      startDate: patient.startDate?.slice(0, 10) ?? "",
+      responsibleId: patient.responsibleId ?? "",
+      status: patient.status,
+    });
+    setEditOpen(true);
+  }
+
+  const saveEdit = useMutation({
+    mutationFn: async () => {
+      const { error } = (await supabase
+        .from("patients")
+        .update({
+          name: form.name,
+          email: form.email,
+          phone: form.whatsapp,
+          program_start_date: form.startDate,
+          status: form.status,
+          responsible_id: form.responsibleId || null,
+        })
+        .eq("id", id)) as any;
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["patient", id] });
+      qc.invalidateQueries({ queryKey: ["patients", "enriched"] });
+      setEditOpen(false);
+      toast.success("Paciente atualizado");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
+  });
+
   const COLORS = ["var(--primary)", "var(--success)", "var(--warning)", "var(--danger)", "oklch(0.6 0.15 280)"];
 
   const [copied, setCopied] = useState(false);
@@ -112,44 +174,61 @@ function PatientDetail() {
         <ArrowLeft className="h-4 w-4 mr-1" /> Pacientes
       </Link>
 
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl font-semibold">{patient.name}</h1>
-            <CriticalityBadge level={crit} />
-            <Badge variant="outline">{STATUS_LABEL[patient.status]}</Badge>
+      <Card>
+        <CardContent className="p-6 space-y-5">
+          <div className="flex flex-wrap items-start justify-between gap-4">
+            <div className="space-y-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h1 className="text-2xl font-semibold">{patient.name}</h1>
+                <CriticalityBadge level={crit} />
+                <Badge variant="outline">{STATUS_LABEL[patient.status]}</Badge>
+              </div>
+              {patient.startDate && (
+                <p className="text-sm text-muted-foreground">
+                  Dia {programDay(patient.startDate)} de 30 · Início{" "}
+                  {format(parseISO(patient.startDate), "dd MMM yyyy", { locale: ptBR })}
+                </p>
+              )}
+            </div>
+            <div className="flex items-center gap-4 shrink-0">
+              <div className="flex items-center gap-2">
+                <Switch
+                  id="ativo"
+                  checked={patient.status === "active"}
+                  onCheckedChange={toggleActive}
+                  disabled={updateStatus.isPending}
+                />
+                <Label htmlFor="ativo" className="text-sm text-muted-foreground">
+                  Ativo
+                </Label>
+              </div>
+              <Button variant="outline" onClick={openEditDialog}>
+                <Pencil className="h-4 w-4 mr-2" /> Editar
+              </Button>
+            </div>
           </div>
-          <p className="text-sm text-muted-foreground mt-1">
-            {patient.email} · {patient.whatsapp} · Responsável: {responsible?.name ?? "—"}
-          </p>
-          {patient.startDate && (
-            <p className="text-sm text-muted-foreground">
-              Dia {programDay(patient.startDate)} de 30 · Início {format(parseISO(patient.startDate), "dd MMM yyyy", { locale: ptBR })}
-            </p>
-          )}
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Select value={patient.status} onValueChange={(v) => updateStatus.mutate(v as "active" | "paused" | "completed")}>
-            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
-            <SelectContent>
-              <SelectItem value="active">Ativo</SelectItem>
-              <SelectItem value="paused">Pausado</SelectItem>
-              <SelectItem value="completed">Concluído</SelectItem>
-            </SelectContent>
-          </Select>
-          <Button asChild variant="outline">
-            <Link to="/prontuario/$id" params={{ id }}>
-              <FileText className="h-4 w-4 mr-2" /> Prontuário
-            </Link>
-          </Button>
-          <Button variant="outline" onClick={copyLink}>
-            {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />} Link do formulário
-          </Button>
-          <Button onClick={() => toast.info("Lembrete será enviado via n8n")}>
-            <Send className="h-4 w-4 mr-2" /> Enviar lembrete
-          </Button>
-        </div>
-      </div>
+
+          <div className="grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3 border-t pt-4">
+            <Field label="E-mail" value={patient.email || "—"} />
+            <Field label="Telefone" value={patient.whatsapp || "—"} />
+            <Field label="Responsável" value={responsible?.name ?? "—"} />
+          </div>
+
+          <div className="flex flex-wrap gap-2 border-t pt-4">
+            <Button asChild variant="outline">
+              <Link to="/prontuario/$id" params={{ id }}>
+                <FileText className="h-4 w-4 mr-2" /> Prontuário
+              </Link>
+            </Button>
+            <Button variant="outline" onClick={copyLink}>
+              {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />} Link do formulário
+            </Button>
+            <Button onClick={() => toast.info("Lembrete será enviado via n8n")}>
+              <Send className="h-4 w-4 mr-2" /> Enviar lembrete
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <Tabs defaultValue="evolution">
         <TabsList>
@@ -228,6 +307,67 @@ function PatientDetail() {
           </Card>
         </TabsContent>
       </Tabs>
+
+      <Dialog open={editOpen} onOpenChange={setEditOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Editar paciente</DialogTitle>
+          </DialogHeader>
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Nome</Label>
+              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>E-mail</Label>
+              <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>WhatsApp</Label>
+              <Input placeholder="+55..." value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Início do programa</Label>
+              <Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Status</Label>
+              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v as EditForm["status"] })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Ativo</SelectItem>
+                  <SelectItem value="paused">Pausado</SelectItem>
+                  <SelectItem value="completed">Concluído</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5 sm:col-span-2">
+              <Label>Profissional responsável</Label>
+              <Select value={form.responsibleId} onValueChange={(v) => setForm({ ...form, responsibleId: v })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditOpen(false)}>Cancelar</Button>
+            <Button onClick={() => saveEdit.mutate()} disabled={saveEdit.isPending}>Salvar</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-xs uppercase tracking-wide text-muted-foreground">{label}</div>
+      <div className="text-sm truncate" title={value}>
+        {value}
+      </div>
     </div>
   );
 }
