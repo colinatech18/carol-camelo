@@ -1,7 +1,17 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Trash2, UserPlus, User as UserIcon, Mail, Lock, Search, KeyRound, Loader2 } from "lucide-react";
+import {
+  Pencil,
+  Trash2,
+  UserPlus,
+  User as UserIcon,
+  Mail,
+  Lock,
+  Search,
+  KeyRound,
+  Loader2,
+} from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -14,14 +24,31 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogTrigger,
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+  DialogTrigger,
 } from "@/components/ui/dialog";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { api } from "@/services/api";
 import { loadForms } from "@/lib/forms-store";
 import {
-  loadAppearance, saveAppearance, applyAppearance,
-  type Appearance, type ThemeMode, type WeekStart, type TimeFormat, type DateFormat,
+  loadAppearance,
+  saveAppearance,
+  applyAppearance,
+  type Appearance,
+  type ThemeMode,
+  type WeekStart,
+  type TimeFormat,
+  type DateFormat,
 } from "@/lib/appearance";
 import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
@@ -157,14 +184,26 @@ function ProfileTab() {
 
   async function save() {
     if (password || confirm) {
-      if (password !== confirm) { toast.error("As senhas não coincidem"); return; }
-      if (password.length < 6) { toast.error("A senha deve ter ao menos 6 caracteres"); return; }
+      if (password !== confirm) {
+        toast.error("As senhas não coincidem");
+        return;
+      }
+      if (password.length < 6) {
+        toast.error("A senha deve ter ao menos 6 caracteres");
+        return;
+      }
       const { error } = await supabase.auth.updateUser({ password });
-      if (error) { toast.error(error.message); return; }
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
     }
     if (user?.id) {
       const { error } = (await supabase.from("profiles").update({ name }).eq("id", user.id)) as any;
-      if (error) { toast.error(error.message); return; }
+      if (error) {
+        toast.error(error.message);
+        return;
+      }
     }
     setPassword("");
     setConfirm("");
@@ -278,7 +317,12 @@ function TeamCard() {
   const [addOpen, setAddOpen] = useState(false);
   const [editing, setEditing] = useState<User | null>(null);
   const [q, setQ] = useState("");
-  const [addForm, setAddForm] = useState({ name: "", email: "", role: "psicologo" as Role, password: "" });
+  const [addForm, setAddForm] = useState({
+    name: "",
+    email: "",
+    role: "psicologo" as Role,
+    password: "",
+  });
   const [editForm, setEditForm] = useState({ name: "", role: "psicologo" as Role });
 
   const { data: users = [] } = useQuery({
@@ -297,9 +341,16 @@ function TeamCard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(addForm),
       });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+      if (!res.ok) {
+        const e = await res.json();
+        throw new Error(e.error);
+      }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["users"] }); setAddOpen(false); toast.success("Membro adicionado"); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      setAddOpen(false);
+      toast.success("Membro adicionado");
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro"),
   });
 
@@ -311,9 +362,16 @@ function TeamCard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id: editing.id, name: editForm.name, role: editForm.role }),
       });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+      if (!res.ok) {
+        const e = await res.json();
+        throw new Error(e.error);
+      }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["users"] }); setEditing(null); toast.success("Membro atualizado"); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      setEditing(null);
+      toast.success("Membro atualizado");
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro"),
   });
 
@@ -324,9 +382,15 @@ function TeamCard() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id }),
       });
-      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+      if (!res.ok) {
+        const e = await res.json();
+        throw new Error(e.error);
+      }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["users"] }); toast.success("Membro removido"); },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast.success("Membro removido");
+    },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao remover"),
   });
 
@@ -339,8 +403,14 @@ function TeamCard() {
   }
 
   function handleAdd() {
-    if (!addForm.name || !addForm.email || !addForm.password) { toast.error("Preencha nome, e-mail e senha"); return; }
-    if (addForm.password.length < 6) { toast.error("A senha deve ter ao menos 6 caracteres"); return; }
+    if (!addForm.name || !addForm.email || !addForm.password) {
+      toast.error("Preencha nome, e-mail e senha");
+      return;
+    }
+    if (addForm.password.length < 6) {
+      toast.error("A senha deve ter ao menos 6 caracteres");
+      return;
+    }
     createUser.mutate();
   }
 
@@ -350,103 +420,142 @@ function TeamCard() {
   }
 
   const filtered = users.filter(
-    (u) => u.name.toLowerCase().includes(q.toLowerCase()) || u.email.toLowerCase().includes(q.toLowerCase()),
+    (u) =>
+      u.name.toLowerCase().includes(q.toLowerCase()) ||
+      u.email.toLowerCase().includes(q.toLowerCase()),
   );
 
   return (
-    <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-4">
-        <div>
-          <CardTitle className="text-base">Equipe</CardTitle>
-          <CardDescription>Profissionais com acesso ao sistema.</CardDescription>
-        </div>
-        <Button size="sm" onClick={() => { setAddForm({ name: "", email: "", role: "psicologo", password: "" }); setAddOpen(true); }}>
-          <UserPlus className="h-4 w-4 mr-2" /> Adicionar membro
-        </Button>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input className="pl-9" placeholder="Buscar por nome ou e-mail…" value={q} onChange={(e) => setQ(e.target.value)} />
-        </div>
+    <SectionRow title="Equipe" description="Profissionais com acesso ao sistema.">
+      <Card>
+        <CardContent className="p-6 space-y-3">
+          <div className="flex flex-wrap gap-2">
+            <div className="relative flex-1 min-w-[12rem]">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                placeholder="Buscar por nome ou e-mail…"
+                value={q}
+                onChange={(e) => setQ(e.target.value)}
+              />
+            </div>
+            <Button
+              className="shrink-0"
+              onClick={() => {
+                setAddForm({ name: "", email: "", role: "psicologo", password: "" });
+                setAddOpen(true);
+              }}
+            >
+              <UserPlus className="h-4 w-4 mr-2" /> Adicionar membro
+            </Button>
+          </div>
 
-        <div className="divide-y rounded-md border">
-          {filtered.length === 0 && (
-            <p className="text-sm text-muted-foreground p-4 text-center">Nenhum membro encontrado.</p>
-          )}
-          {filtered.map((u) => {
-            const isMe = u.id === me?.id;
-            return (
-              <div key={u.id} className="flex items-center gap-3 p-3">
-                <div
-                  className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold text-white"
-                  style={{ background: colorFromName(u.name) }}
-                >
-                  {initialsOf(u.name)}
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium truncate">{u.name}</span>
-                    {isMe && <Badge variant="secondary" className="shrink-0">Você</Badge>}
+          <div className="divide-y rounded-md border">
+            {filtered.length === 0 && (
+              <p className="text-sm text-muted-foreground p-4 text-center">
+                Nenhum membro encontrado.
+              </p>
+            )}
+            {filtered.map((u) => {
+              const isMe = u.id === me?.id;
+              return (
+                <div key={u.id} className="flex items-center gap-3 p-3">
+                  <div
+                    className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold text-white"
+                    style={{ background: colorFromName(u.name) }}
+                  >
+                    {initialsOf(u.name)}
                   </div>
-                  <div className="text-xs text-muted-foreground truncate">{u.email}</div>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium truncate">{u.name}</span>
+                      {isMe && (
+                        <Badge variant="secondary" className="shrink-0">
+                          Você
+                        </Badge>
+                      )}
+                    </div>
+                    <div className="text-xs text-muted-foreground truncate">{u.email}</div>
+                  </div>
+                  <Badge variant="outline" className={cn("shrink-0", ROLE_BADGE[u.role])}>
+                    {ROLE_LABEL[u.role]}
+                  </Badge>
+                  <div className="flex items-center gap-0.5 shrink-0">
+                    <Button
+                      size="icon"
+                      variant="ghost"
+                      title="Enviar redefinição de senha"
+                      onClick={() => sendReset(u.email)}
+                    >
+                      <KeyRound className="h-4 w-4" />
+                    </Button>
+                    <Button size="icon" variant="ghost" title="Editar" onClick={() => openEdit(u)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    {!isMe && (
+                      <AlertDialog>
+                        <AlertDialogTrigger asChild>
+                          <Button size="icon" variant="ghost" title="Remover">
+                            <Trash2 className="h-4 w-4 text-danger" />
+                          </Button>
+                        </AlertDialogTrigger>
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>Remover {u.name}?</AlertDialogTitle>
+                            <AlertDialogDescription>
+                              Isso apaga a conta de login e o acesso deste membro. Ação
+                              irreversível.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                            <AlertDialogAction onClick={() => removeUser.mutate(u.id)}>
+                              Remover
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    )}
+                  </div>
                 </div>
-                <Badge variant="outline" className={cn("shrink-0", ROLE_BADGE[u.role])}>
-                  {ROLE_LABEL[u.role]}
-                </Badge>
-                <div className="flex items-center gap-0.5 shrink-0">
-                  <Button size="icon" variant="ghost" title="Enviar redefinição de senha" onClick={() => sendReset(u.email)}>
-                    <KeyRound className="h-4 w-4" />
-                  </Button>
-                  <Button size="icon" variant="ghost" title="Editar" onClick={() => openEdit(u)}>
-                    <Pencil className="h-4 w-4" />
-                  </Button>
-                  {!isMe && (
-                    <AlertDialog>
-                      <AlertDialogTrigger asChild>
-                        <Button size="icon" variant="ghost" title="Remover">
-                          <Trash2 className="h-4 w-4 text-danger" />
-                        </Button>
-                      </AlertDialogTrigger>
-                      <AlertDialogContent>
-                        <AlertDialogHeader>
-                          <AlertDialogTitle>Remover {u.name}?</AlertDialogTitle>
-                          <AlertDialogDescription>
-                            Isso apaga a conta de login e o acesso deste membro. Ação irreversível.
-                          </AlertDialogDescription>
-                        </AlertDialogHeader>
-                        <AlertDialogFooter>
-                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
-                          <AlertDialogAction onClick={() => removeUser.mutate(u.id)}>Remover</AlertDialogAction>
-                        </AlertDialogFooter>
-                      </AlertDialogContent>
-                    </AlertDialog>
-                  )}
-                </div>
-              </div>
-            );
-          })}
-        </div>
-        <p className="text-xs text-muted-foreground">{users.length} membro(s)</p>
-      </CardContent>
+              );
+            })}
+          </div>
+          <p className="text-xs text-muted-foreground">{users.length} membro(s)</p>
+        </CardContent>
+      </Card>
 
       {/* Adicionar membro */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Adicionar membro</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Adicionar membro</DialogTitle>
+          </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label>Nome</Label>
-              <Input value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} />
+              <Input
+                value={addForm.name}
+                onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>E-mail</Label>
-              <Input type="email" value={addForm.email} onChange={(e) => setAddForm({ ...addForm, email: e.target.value })} />
+              <Input
+                type="email"
+                value={addForm.email}
+                onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Perfil</Label>
-              <Select value={addForm.role} onValueChange={(v) => setAddForm({ ...addForm, role: v as Role })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={addForm.role}
+                onValueChange={(v) => setAddForm({ ...addForm, role: v as Role })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="admin">Administrador</SelectItem>
                   <SelectItem value="psicologo">Psicólogo</SelectItem>
@@ -457,11 +566,18 @@ function TeamCard() {
             </div>
             <div className="space-y-1.5">
               <Label>Senha provisória</Label>
-              <Input type="password" placeholder="mín. 6 caracteres" value={addForm.password} onChange={(e) => setAddForm({ ...addForm, password: e.target.value })} />
+              <Input
+                type="password"
+                placeholder="mín. 6 caracteres"
+                value={addForm.password}
+                onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
+              />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setAddOpen(false)}>Cancelar</Button>
+            <Button variant="ghost" onClick={() => setAddOpen(false)}>
+              Cancelar
+            </Button>
             <Button onClick={handleAdd} disabled={createUser.isPending}>
               {createUser.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Adicionar
             </Button>
@@ -472,16 +588,26 @@ function TeamCard() {
       {/* Editar membro */}
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent>
-          <DialogHeader><DialogTitle>Editar membro</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Editar membro</DialogTitle>
+          </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label>Nome</Label>
-              <Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+              <Input
+                value={editForm.name}
+                onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Perfil</Label>
-              <Select value={editForm.role} onValueChange={(v) => setEditForm({ ...editForm, role: v as Role })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={editForm.role}
+                onValueChange={(v) => setEditForm({ ...editForm, role: v as Role })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="admin">Administrador</SelectItem>
                   <SelectItem value="psicologo">Psicólogo</SelectItem>
@@ -497,14 +623,19 @@ function TeamCard() {
             )}
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setEditing(null)}>Cancelar</Button>
-            <Button onClick={() => updateUser.mutate()} disabled={updateUser.isPending || !editForm.name.trim()}>
+            <Button variant="ghost" onClick={() => setEditing(null)}>
+              Cancelar
+            </Button>
+            <Button
+              onClick={() => updateUser.mutate()}
+              disabled={updateUser.isPending || !editForm.name.trim()}
+            >
               {updateUser.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Salvar
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </Card>
+    </SectionRow>
   );
 }
 
@@ -520,33 +651,40 @@ function DefaultFormCard() {
   }
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Formulário padrão</CardTitle>
-        <CardDescription>
-          Formulário diário enviado aos pacientes durante os 30 dias de acompanhamento.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="space-y-1.5">
-          <Label>Formulário ativo</Label>
-          <Select value={selected} onValueChange={setSelected}>
-            <SelectTrigger>
-              <SelectValue placeholder={forms.length ? "Selecione um formulário" : "Nenhum formulário cadastrado"} />
-            </SelectTrigger>
-            <SelectContent>
-              {forms.map((f) => (
-                <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <p className="text-xs text-muted-foreground">
-            Cadastre formulários em <span className="font-medium">Formulários</span>.
-          </p>
-        </div>
-        <Button onClick={save} disabled={!selected}>Salvar</Button>
-      </CardContent>
-    </Card>
+    <SectionRow
+      title="Formulário padrão"
+      description="Formulário diário enviado aos pacientes durante os 30 dias de acompanhamento."
+    >
+      <Card>
+        <CardContent className="p-6 space-y-3">
+          <div className="space-y-1.5">
+            <Label>Formulário ativo</Label>
+            <Select value={selected} onValueChange={setSelected}>
+              <SelectTrigger>
+                <SelectValue
+                  placeholder={
+                    forms.length ? "Selecione um formulário" : "Nenhum formulário cadastrado"
+                  }
+                />
+              </SelectTrigger>
+              <SelectContent>
+                {forms.map((f) => (
+                  <SelectItem key={f.id} value={f.id}>
+                    {f.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">
+              Cadastre formulários em <span className="font-medium">Formulários</span>.
+            </p>
+          </div>
+          <Button onClick={save} disabled={!selected}>
+            Salvar
+          </Button>
+        </CardContent>
+      </Card>
+    </SectionRow>
   );
 }
 
@@ -558,35 +696,41 @@ function NotificationsCard() {
   const [prefs, setPrefs] = useState<NotificationPrefs>(() =>
     readLS<NotificationPrefs>(LS.notifications, { inactivity2d: true, redStatus: true }),
   );
-  useEffect(() => { writeLS(LS.notifications, prefs); }, [prefs]);
+  useEffect(() => {
+    writeLS(LS.notifications, prefs);
+  }, [prefs]);
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">Notificações</CardTitle>
-        <CardDescription>Alertas automáticos por e-mail para a equipe.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-sm font-medium">Inatividade do paciente</div>
-            <p className="text-xs text-muted-foreground">
-              Notifica a equipe quando um paciente não responde há 2 dias ou mais.
-            </p>
+    <SectionRow title="Notificações" description="Alertas automáticos por e-mail para a equipe.">
+      <Card>
+        <CardContent className="p-6 space-y-4">
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Inatividade do paciente</div>
+              <p className="text-xs text-muted-foreground">
+                Notifica a equipe quando um paciente não responde há 2 dias ou mais.
+              </p>
+            </div>
+            <Switch
+              checked={prefs.inactivity2d}
+              onCheckedChange={(v) => setPrefs({ ...prefs, inactivity2d: v })}
+            />
           </div>
-          <Switch checked={prefs.inactivity2d} onCheckedChange={(v) => setPrefs({ ...prefs, inactivity2d: v })} />
-        </div>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <div className="text-sm font-medium">Status crítico (vermelho)</div>
-            <p className="text-xs text-muted-foreground">
-              Notifica quando um paciente entra em status vermelho.
-            </p>
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Status crítico (vermelho)</div>
+              <p className="text-xs text-muted-foreground">
+                Notifica quando um paciente entra em status vermelho.
+              </p>
+            </div>
+            <Switch
+              checked={prefs.redStatus}
+              onCheckedChange={(v) => setPrefs({ ...prefs, redStatus: v })}
+            />
           </div>
-          <Switch checked={prefs.redStatus} onCheckedChange={(v) => setPrefs({ ...prefs, redStatus: v })} />
-        </div>
-      </CardContent>
-    </Card>
+        </CardContent>
+      </Card>
+    </SectionRow>
   );
 }
 
@@ -602,8 +746,14 @@ function maskPhone(v: string): string {
 
 function WhatsappCard() {
   const qc = useQueryClient();
-  const { data: whatsapp } = useQuery({ queryKey: ["whatsapp"], queryFn: api.settings.getWhatsapp });
-  const { data: template } = useQuery({ queryKey: ["template"], queryFn: api.settings.getTemplate });
+  const { data: whatsapp } = useQuery({
+    queryKey: ["whatsapp"],
+    queryFn: api.settings.getWhatsapp,
+  });
+  const { data: template } = useQuery({
+    queryKey: ["template"],
+    queryFn: api.settings.getTemplate,
+  });
 
   const [phone, setPhone] = useState("");
   const [apiKey, setApiKey] = useState("");
@@ -615,7 +765,9 @@ function WhatsappCard() {
       setPhone(maskPhone(whatsapp.phoneNumberId || ""));
     }
   }, [whatsapp]);
-  useEffect(() => { if (template) setTpl(template.body); }, [template]);
+  useEffect(() => {
+    if (template) setTpl(template.body);
+  }, [template]);
 
   const saveAll = useMutation({
     mutationFn: async () => {
@@ -630,44 +782,55 @@ function WhatsappCard() {
   });
 
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-base">WhatsApp Business API</CardTitle>
-        <CardDescription>Envio automático de lembretes diários para os pacientes.</CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="space-y-1.5">
-          <Label>Número do WhatsApp</Label>
-          <Input
-            placeholder="+55 (11) 99999-9999"
-            value={phone}
-            onChange={(e) => setPhone(maskPhone(e.target.value))}
-          />
-        </div>
-        <div className="space-y-1.5">
-          <Label>API Key / Token de acesso</Label>
-          <Input type="password" placeholder="••••••••" value={apiKey} onChange={(e) => setApiKey(e.target.value)} />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Template de mensagem de lembrete</Label>
-          <Textarea rows={4} value={tpl} onChange={(e) => setTpl(e.target.value)} />
-          <p className="text-xs text-muted-foreground">
-            Variáveis disponíveis: <code>{"{nome}"}</code>, <code>{"{dias_sem_resposta}"}</code>, <code>{"{link}"}</code>
-          </p>
-        </div>
-        <div className="flex gap-2">
-          <Button onClick={() => saveAll.mutate()} disabled={saveAll.isPending}>Salvar</Button>
-          <Button variant="outline" onClick={() => toast.success("Conexão testada com sucesso (mock)")}>
-            Testar conexão
-          </Button>
-        </div>
-      </CardContent>
-    </Card>
+    <SectionRow
+      title="WhatsApp Business API"
+      description="Envio automático de lembretes diários para os pacientes."
+    >
+      <Card>
+        <CardContent className="p-6 space-y-3">
+          <div className="space-y-1.5">
+            <Label>Número do WhatsApp</Label>
+            <Input
+              placeholder="+55 (11) 99999-9999"
+              value={phone}
+              onChange={(e) => setPhone(maskPhone(e.target.value))}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>API Key / Token de acesso</Label>
+            <Input
+              type="password"
+              placeholder="••••••••"
+              value={apiKey}
+              onChange={(e) => setApiKey(e.target.value)}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label>Template de mensagem de lembrete</Label>
+            <Textarea rows={4} value={tpl} onChange={(e) => setTpl(e.target.value)} />
+            <p className="text-xs text-muted-foreground">
+              Variáveis disponíveis: <code>{"{nome}"}</code>, <code>{"{dias_sem_resposta}"}</code>,{" "}
+              <code>{"{link}"}</code>
+            </p>
+          </div>
+          <div className="flex gap-2">
+            <Button onClick={() => saveAll.mutate()} disabled={saveAll.isPending}>
+              Salvar
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => toast.success("Conexão testada com sucesso (mock)")}
+            >
+              Testar conexão
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
+    </SectionRow>
   );
 }
 
 /* ============================== APARÊNCIA ============================== */
-
 
 const PRESET_COLORS: Array<{ name: string; hex: string }> = [
   { name: "Cinza", hex: "#6b7280" },
@@ -692,8 +855,14 @@ const TIMEZONES = [
 ];
 
 function SectionRow({
-  title, description, children,
-}: { title: string; description: string; children: React.ReactNode }) {
+  title,
+  description,
+  children,
+}: {
+  title: string;
+  description: string;
+  children: React.ReactNode;
+}) {
   return (
     <section className="grid lg:grid-cols-10 gap-6">
       <div className="lg:col-span-3">
@@ -710,8 +879,12 @@ function ThemePreview({ variant }: { variant: "light" | "dark" | "auto" }) {
     return (
       <svg viewBox="0 0 120 80" className="w-full h-20 rounded-md border">
         <defs>
-          <clipPath id="left"><rect x="0" y="0" width="60" height="80" /></clipPath>
-          <clipPath id="right"><rect x="60" y="0" width="60" height="80" /></clipPath>
+          <clipPath id="left">
+            <rect x="0" y="0" width="60" height="80" />
+          </clipPath>
+          <clipPath id="right">
+            <rect x="60" y="0" width="60" height="80" />
+          </clipPath>
         </defs>
         <g clipPath="url(#left)">
           <rect width="120" height="80" fill="#ffffff" />
@@ -756,7 +929,6 @@ function AppearanceTab() {
 
   return (
     <div className="space-y-8">
-
       <SectionRow
         title="Aparência"
         description="Escolha o modo claro, escuro, ou automático com base no sistema."
@@ -784,54 +956,69 @@ function AppearanceTab() {
 
       <Separator />
 
-      <SectionRow title="Contraste" description="Ative e desative texto e bordas de alto contraste.">
-        <Card><CardContent className="p-6 flex items-start justify-between gap-4">
-          <div>
-            <div className="text-sm font-medium">Alto contraste para maior acessibilidade</div>
-            <p className="text-xs text-muted-foreground">
-              Aumenta a espessura de bordas e o peso da tipografia.
-            </p>
-          </div>
-          <Switch checked={a.highContrast} onCheckedChange={(v) => update({ highContrast: v })} />
-        </CardContent></Card>
+      <SectionRow
+        title="Contraste"
+        description="Ative e desative texto e bordas de alto contraste."
+      >
+        <Card>
+          <CardContent className="p-6 flex items-start justify-between gap-4">
+            <div>
+              <div className="text-sm font-medium">Alto contraste para maior acessibilidade</div>
+              <p className="text-xs text-muted-foreground">
+                Aumenta a espessura de bordas e o peso da tipografia.
+              </p>
+            </div>
+            <Switch checked={a.highContrast} onCheckedChange={(v) => update({ highContrast: v })} />
+          </CardContent>
+        </Card>
       </SectionRow>
 
       <Separator />
 
       <SectionRow title="Idioma e região" description="Personalize seu idioma e região.">
-        <Card><CardContent className="p-6 space-y-4">
-          <div className="space-y-1.5">
-            <Label>Idioma</Label>
-            <Select value={a.language} onValueChange={(v) => update({ language: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="pt-BR">🌐 Português (Brasil)</SelectItem>
-                <SelectItem value="en" disabled>English (em breve)</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="space-y-1.5">
-            <Label>Fuso horário</Label>
-            <Select value={a.timezone} onValueChange={(v) => update({ timezone: v })}>
-              <SelectTrigger><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {TIMEZONES.map((tz) => (
-                  <SelectItem key={tz} value={tz}>{tz}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
-          <div className="flex items-center gap-2 pt-1">
-            <Checkbox
-              id="notify-tz"
-              checked={a.notifyTzChange}
-              onCheckedChange={(v) => update({ notifyTzChange: Boolean(v) })}
-            />
-            <Label htmlFor="notify-tz" className="text-sm font-normal cursor-pointer">
-              Notifique-me de alterações no fuso horário
-            </Label>
-          </div>
-        </CardContent></Card>
+        <Card>
+          <CardContent className="p-6 space-y-4">
+            <div className="space-y-1.5">
+              <Label>Idioma</Label>
+              <Select value={a.language} onValueChange={(v) => update({ language: v })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="pt-BR">🌐 Português (Brasil)</SelectItem>
+                  <SelectItem value="en" disabled>
+                    English (em breve)
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Fuso horário</Label>
+              <Select value={a.timezone} onValueChange={(v) => update({ timezone: v })}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {TIMEZONES.map((tz) => (
+                    <SelectItem key={tz} value={tz}>
+                      {tz}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-center gap-2 pt-1">
+              <Checkbox
+                id="notify-tz"
+                checked={a.notifyTzChange}
+                onCheckedChange={(v) => update({ notifyTzChange: Boolean(v) })}
+              />
+              <Label htmlFor="notify-tz" className="text-sm font-normal cursor-pointer">
+                Notifique-me de alterações no fuso horário
+              </Label>
+            </div>
+          </CardContent>
+        </Card>
       </SectionRow>
 
       <Separator />
@@ -840,59 +1027,71 @@ function AppearanceTab() {
         title="Formato de data e hora"
         description="Escolha como os dados de hora e data são exibidos."
       >
-        <Card><CardContent className="p-6 space-y-5">
-          <div className="space-y-2">
-            <Label>Início da semana no calendário</Label>
-            <RadioGroup
-              value={a.weekStart}
-              onValueChange={(v) => update({ weekStart: v as WeekStart })}
-              className="flex gap-6"
-            >
-              <div className="flex items-center gap-2">
-                <RadioGroupItem id="ws-sun" value="sunday" />
-                <Label htmlFor="ws-sun" className="font-normal cursor-pointer">Domingo</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <RadioGroupItem id="ws-mon" value="monday" />
-                <Label htmlFor="ws-mon" className="font-normal cursor-pointer">Segunda-feira</Label>
-              </div>
-            </RadioGroup>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Formato da hora</Label>
-            <RadioGroup
-              value={a.timeFormat}
-              onValueChange={(v) => update({ timeFormat: v as TimeFormat })}
-              className="flex gap-6"
-            >
-              <div className="flex items-center gap-2">
-                <RadioGroupItem id="tf-24" value="24h" />
-                <Label htmlFor="tf-24" className="font-normal cursor-pointer">24 horas</Label>
-              </div>
-              <div className="flex items-center gap-2">
-                <RadioGroupItem id="tf-12" value="12h" />
-                <Label htmlFor="tf-12" className="font-normal cursor-pointer">12 horas</Label>
-              </div>
-            </RadioGroup>
-          </div>
-
-          <div className="space-y-2">
-            <Label>Formato da data</Label>
-            <RadioGroup
-              value={a.dateFormat}
-              onValueChange={(v) => update({ dateFormat: v as DateFormat })}
-              className="flex flex-col gap-2"
-            >
-              {(["mm/dd/yyyy", "dd/mm/yyyy", "yyyy/mm/dd"] as DateFormat[]).map((f) => (
-                <div key={f} className="flex items-center gap-2">
-                  <RadioGroupItem id={`df-${f}`} value={f} />
-                  <Label htmlFor={`df-${f}`} className="font-normal cursor-pointer font-mono">{f}</Label>
+        <Card>
+          <CardContent className="p-6 space-y-5">
+            <div className="space-y-2">
+              <Label>Início da semana no calendário</Label>
+              <RadioGroup
+                value={a.weekStart}
+                onValueChange={(v) => update({ weekStart: v as WeekStart })}
+                className="flex gap-6"
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem id="ws-sun" value="sunday" />
+                  <Label htmlFor="ws-sun" className="font-normal cursor-pointer">
+                    Domingo
+                  </Label>
                 </div>
-              ))}
-            </RadioGroup>
-          </div>
-        </CardContent></Card>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem id="ws-mon" value="monday" />
+                  <Label htmlFor="ws-mon" className="font-normal cursor-pointer">
+                    Segunda-feira
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Formato da hora</Label>
+              <RadioGroup
+                value={a.timeFormat}
+                onValueChange={(v) => update({ timeFormat: v as TimeFormat })}
+                className="flex gap-6"
+              >
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem id="tf-24" value="24h" />
+                  <Label htmlFor="tf-24" className="font-normal cursor-pointer">
+                    24 horas
+                  </Label>
+                </div>
+                <div className="flex items-center gap-2">
+                  <RadioGroupItem id="tf-12" value="12h" />
+                  <Label htmlFor="tf-12" className="font-normal cursor-pointer">
+                    12 horas
+                  </Label>
+                </div>
+              </RadioGroup>
+            </div>
+
+            <div className="space-y-2">
+              <Label>Formato da data</Label>
+              <RadioGroup
+                value={a.dateFormat}
+                onValueChange={(v) => update({ dateFormat: v as DateFormat })}
+                className="flex flex-col gap-2"
+              >
+                {(["mm/dd/yyyy", "dd/mm/yyyy", "yyyy/mm/dd"] as DateFormat[]).map((f) => (
+                  <div key={f} className="flex items-center gap-2">
+                    <RadioGroupItem id={`df-${f}`} value={f} />
+                    <Label htmlFor={`df-${f}`} className="font-normal cursor-pointer font-mono">
+                      {f}
+                    </Label>
+                  </div>
+                ))}
+              </RadioGroup>
+            </div>
+          </CardContent>
+        </Card>
       </SectionRow>
     </div>
   );
