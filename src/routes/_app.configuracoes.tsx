@@ -43,7 +43,6 @@ const ROLE_LABEL: Record<Role, string> = {
 const LS = {
   defaultForm: "mh.settings.defaultForm",
   notifications: "mh.settings.notifications",
-  externalEhr: "mh.settings.externalEhr",
   profile: "mh.settings.profile",
   preferences: "mh.settings.preferences",
   theme: "mh.theme",
@@ -90,15 +89,8 @@ function SettingsPage() {
         {user?.role === "admin" && (
           <TabsContent value="integracoes" className="space-y-6">
             <WhatsappCard />
-            <ExternalEhrCard />
           </TabsContent>
         )}
-
-        <TabsContent value="integracoes" className="space-y-6">
-          <WhatsappCard />
-          <ExternalEhrCard />
-          
-        </TabsContent>
 
         <TabsContent value="perfil">
           <ProfileTab />
@@ -523,48 +515,6 @@ function WhatsappCard() {
     </Card>
   );
 }
-
-/* ========================= PRONTUÁRIO EXTERNO ========================= */
-
-type ExternalEhr = { url: string; token: string };
-
-function ExternalEhrCard() {
-  const [data, setData] = useState<ExternalEhr>(() => readLS<ExternalEhr>(LS.externalEhr, { url: "", token: "" }));
-  const configured = Boolean(data.url && data.token);
-
-  function save() {
-    writeLS(LS.externalEhr, data);
-    toast.success("Configuração de prontuário salva");
-  }
-
-  return (
-    <Card>
-      <CardHeader>
-        <div className="flex items-start justify-between gap-4">
-          <div>
-            <CardTitle className="text-base">Prontuário externo</CardTitle>
-            <CardDescription>Conecte uma plataforma externa de prontuário eletrônico.</CardDescription>
-          </div>
-          <Badge variant={configured ? "default" : "secondary"}>
-            {configured ? "Configurado" : "Não configurado"}
-          </Badge>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <div className="space-y-1.5">
-          <Label>URL da plataforma</Label>
-          <Input placeholder="https://" value={data.url} onChange={(e) => setData({ ...data, url: e.target.value })} />
-        </div>
-        <div className="space-y-1.5">
-          <Label>Token de API</Label>
-          <Input type="password" placeholder="••••••••" value={data.token} onChange={(e) => setData({ ...data, token: e.target.value })} />
-        </div>
-        <Button onClick={save}>Salvar</Button>
-      </CardContent>
-    </Card>
-  );
-}
-
 
 /* ============================== APARÊNCIA ============================== */
 
