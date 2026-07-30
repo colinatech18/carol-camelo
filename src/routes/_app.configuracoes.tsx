@@ -1,7 +1,7 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Pencil, Trash2, UserPlus, User as UserIcon, Mail, Lock } from "lucide-react";
+import { Pencil, Trash2, UserPlus, User as UserIcon, Mail, Lock, Search, KeyRound, Loader2 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -27,6 +27,18 @@ import { useAuth } from "@/lib/auth-context";
 import { toast } from "sonner";
 import type { Role, User } from "@/types";
 import { supabase } from "@/lib/supabase";
+import { cn } from "@/lib/utils";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 
 export const Route = createFileRoute("/_app/configuracoes")({ component: SettingsPage });
 
@@ -38,6 +50,15 @@ const ROLE_LABEL: Record<Role, string> = {
   // Aliases em inglês (dados do mock) mapeados para os mesmos rótulos.
   psychologist: "Psicólogo",
   psychiatrist: "Psiquiatra",
+};
+
+const ROLE_BADGE: Record<string, string> = {
+  admin: "bg-primary/15 text-primary border-primary/30",
+  psicologo: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+  psychologist: "bg-blue-500/15 text-blue-400 border-blue-500/30",
+  psiquiatra: "bg-violet-500/15 text-violet-400 border-violet-500/30",
+  psychiatrist: "bg-violet-500/15 text-violet-400 border-violet-500/30",
+  recepcionista: "bg-muted text-muted-foreground border-border",
 };
 
 const LS = {
@@ -253,8 +274,12 @@ function ProfileTab() {
 
 function TeamCard() {
   const qc = useQueryClient();
-  const [open, setOpen] = useState(false);
-  const [form, setForm] = useState({ name: "", email: "", role: "psicologo" as Role, password: "" });
+  const { user: me } = useAuth();
+  const [addOpen, setAddOpen] = useState(false);
+  const [editing, setEditing] = useState<User | null>(null);
+  const [q, setQ] = useState("");
+  const [addForm, setAddForm] = useState({ name: "", email: "", role: "psicologo" as Role, password: "" });
+  const [editForm, setEditForm] = useState({ name: "", role: "psicologo" as Role });
 
   const { data: users = [] } = useQuery({
     queryKey: ["users"],
@@ -270,26 +295,63 @@ function TeamCard() {
       const res = await fetch("/api/create-user", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
+        body: JSON.stringify(addForm),
       });
       if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["users"] }); setOpen(false); toast.success("Membro adicionado"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["users"] }); setAddOpen(false); toast.success("Membro adicionado"); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro"),
+  });
+
+  const updateUser = useMutation({
+    mutationFn: async () => {
+      if (!editing) return;
+      const res = await fetch("/api/update-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: editing.id, name: editForm.name, role: editForm.role }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
+    },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["users"] }); setEditing(null); toast.success("Membro atualizado"); },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro"),
   });
 
   const removeUser = useMutation({
     mutationFn: async (id: string) => {
-      const { error } = (await supabase.from("profiles").delete().eq("id", id)) as any;
-      if (error) throw error;
+      const res = await fetch("/api/delete-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (!res.ok) { const e = await res.json(); throw new Error(e.error); }
     },
-    onSuccess: () => { qc.invalidateQueries({ queryKey: ["users"] }); toast.success("Removido"); },
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ["users"] }); toast.success("Membro removido"); },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao remover"),
   });
 
-  function handleSubmit() {
-    if (!form.name || !form.email || !form.password) { toast.error("Preencha nome, e-mail e senha"); return; }
+  async function sendReset(email: string) {
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/redefinir-senha`,
+    });
+    if (error) toast.error(error.message);
+    else toast.success("E-mail de redefinição de senha enviado");
+  }
+
+  function handleAdd() {
+    if (!addForm.name || !addForm.email || !addForm.password) { toast.error("Preencha nome, e-mail e senha"); return; }
+    if (addForm.password.length < 6) { toast.error("A senha deve ter ao menos 6 caracteres"); return; }
     createUser.mutate();
   }
+
+  function openEdit(u: User) {
+    setEditForm({ name: u.name, role: u.role });
+    setEditing(u);
+  }
+
+  const filtered = users.filter(
+    (u) => u.name.toLowerCase().includes(q.toLowerCase()) || u.email.toLowerCase().includes(q.toLowerCase()),
+  );
 
   return (
     <Card>
@@ -298,62 +360,150 @@ function TeamCard() {
           <CardTitle className="text-base">Equipe</CardTitle>
           <CardDescription>Profissionais com acesso ao sistema.</CardDescription>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button size="sm" onClick={() => setForm({ name: "", email: "", role: "psicologo", password: "" })}>
-              <UserPlus className="h-4 w-4 mr-2" /> Adicionar membro
-            </Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader><DialogTitle>Adicionar membro</DialogTitle></DialogHeader>
-            <div className="space-y-3">
-              <div className="space-y-1.5">
-                <Label>Nome</Label>
-                <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>E-mail</Label>
-                <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Perfil</Label>
-                <Select value={form.role} onValueChange={(v) => setForm({ ...form, role: v as Role })}>
-                  <SelectTrigger><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin">Administrador</SelectItem>
-                    <SelectItem value="psicologo">Psicólogo</SelectItem>
-                    <SelectItem value="psiquiatra">Psiquiatra</SelectItem>
-                    <SelectItem value="recepcionista">Recepcionista</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1.5">
-                <Label>Senha provisória</Label>
-                <Input type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
-              </div>
-            </div>
-            <DialogFooter>
-              <Button variant="ghost" onClick={() => setOpen(false)}>Cancelar</Button>
-              <Button onClick={handleSubmit} disabled={createUser.isPending}>Adicionar</Button>
-            </DialogFooter>
-          </DialogContent>
-        </Dialog>
+        <Button size="sm" onClick={() => { setAddForm({ name: "", email: "", role: "psicologo", password: "" }); setAddOpen(true); }}>
+          <UserPlus className="h-4 w-4 mr-2" /> Adicionar membro
+        </Button>
       </CardHeader>
-      <CardContent>
-        <div className="divide-y">
-          {users.map((u) => (
-            <div key={u.id} className="flex items-center justify-between py-2.5">
-              <div>
-                <div className="text-sm font-medium">{u.name}</div>
-                <div className="text-xs text-muted-foreground">{u.email} · {ROLE_LABEL[u.role]}</div>
-              </div>
-              <Button size="icon" variant="ghost" onClick={() => removeUser.mutate(u.id)}>
-                <Trash2 className="h-4 w-4 text-danger" />
-              </Button>
-            </div>
-          ))}
+      <CardContent className="space-y-3">
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input className="pl-9" placeholder="Buscar por nome ou e-mail…" value={q} onChange={(e) => setQ(e.target.value)} />
         </div>
+
+        <div className="divide-y rounded-md border">
+          {filtered.length === 0 && (
+            <p className="text-sm text-muted-foreground p-4 text-center">Nenhum membro encontrado.</p>
+          )}
+          {filtered.map((u) => {
+            const isMe = u.id === me?.id;
+            return (
+              <div key={u.id} className="flex items-center gap-3 p-3">
+                <div
+                  className="h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold text-white"
+                  style={{ background: colorFromName(u.name) }}
+                >
+                  {initialsOf(u.name)}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm font-medium truncate">{u.name}</span>
+                    {isMe && <Badge variant="secondary" className="shrink-0">Você</Badge>}
+                  </div>
+                  <div className="text-xs text-muted-foreground truncate">{u.email}</div>
+                </div>
+                <Badge variant="outline" className={cn("shrink-0", ROLE_BADGE[u.role])}>
+                  {ROLE_LABEL[u.role]}
+                </Badge>
+                <div className="flex items-center gap-0.5 shrink-0">
+                  <Button size="icon" variant="ghost" title="Enviar redefinição de senha" onClick={() => sendReset(u.email)}>
+                    <KeyRound className="h-4 w-4" />
+                  </Button>
+                  <Button size="icon" variant="ghost" title="Editar" onClick={() => openEdit(u)}>
+                    <Pencil className="h-4 w-4" />
+                  </Button>
+                  {!isMe && (
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="icon" variant="ghost" title="Remover">
+                          <Trash2 className="h-4 w-4 text-danger" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Remover {u.name}?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Isso apaga a conta de login e o acesso deste membro. Ação irreversível.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => removeUser.mutate(u.id)}>Remover</AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+        <p className="text-xs text-muted-foreground">{users.length} membro(s)</p>
       </CardContent>
+
+      {/* Adicionar membro */}
+      <Dialog open={addOpen} onOpenChange={setAddOpen}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Adicionar membro</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Nome</Label>
+              <Input value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>E-mail</Label>
+              <Input type="email" value={addForm.email} onChange={(e) => setAddForm({ ...addForm, email: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Perfil</Label>
+              <Select value={addForm.role} onValueChange={(v) => setAddForm({ ...addForm, role: v as Role })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Administrador</SelectItem>
+                  <SelectItem value="psicologo">Psicólogo</SelectItem>
+                  <SelectItem value="psiquiatra">Psiquiatra</SelectItem>
+                  <SelectItem value="recepcionista">Recepcionista</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Senha provisória</Label>
+              <Input type="password" placeholder="mín. 6 caracteres" value={addForm.password} onChange={(e) => setAddForm({ ...addForm, password: e.target.value })} />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setAddOpen(false)}>Cancelar</Button>
+            <Button onClick={handleAdd} disabled={createUser.isPending}>
+              {createUser.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Adicionar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Editar membro */}
+      <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent>
+          <DialogHeader><DialogTitle>Editar membro</DialogTitle></DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Nome</Label>
+              <Input value={editForm.name} onChange={(e) => setEditForm({ ...editForm, name: e.target.value })} />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Perfil</Label>
+              <Select value={editForm.role} onValueChange={(v) => setEditForm({ ...editForm, role: v as Role })}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="admin">Administrador</SelectItem>
+                  <SelectItem value="psicologo">Psicólogo</SelectItem>
+                  <SelectItem value="psiquiatra">Psiquiatra</SelectItem>
+                  <SelectItem value="recepcionista">Recepcionista</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            {editing?.id === me?.id && me?.role === "admin" && editForm.role !== "admin" && (
+              <p className="text-xs text-amber-500">
+                Atenção: você está removendo seu próprio acesso de administrador.
+              </p>
+            )}
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setEditing(null)}>Cancelar</Button>
+            <Button onClick={() => updateUser.mutate()} disabled={updateUser.isPending || !editForm.name.trim()}>
+              {updateUser.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   );
 }
