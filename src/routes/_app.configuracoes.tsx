@@ -40,7 +40,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { api } from "@/services/api";
 import { listForms } from "@/lib/forms-store";
 import {
   loadAppearance,
@@ -142,7 +141,7 @@ function SettingsPage() {
 
         {user?.role === "admin" && (
           <TabsContent value="integracoes" className="space-y-6">
-            <WhatsappCard />
+            <ReminderTemplateCard />
           </TabsContent>
         )}
 
@@ -878,102 +877,67 @@ function NotificationsCard() {
   );
 }
 
-/* ============================== WHATSAPP ============================== */
+/* ============================== LEMBRETE (n8n) ============================== */
 /*
- * ATENÇÃO: este card ainda usa src/services/api.ts (settingsApi), que só faz
- * requisição real se VITE_API_URL estiver configurada — senão cai no
- * mockBackend.ts e grava só em localStorage do navegador. Combinamos migrar
- * isso para Supabase (mesmo padrão de TeamCard/BrandingCard) na próxima etapa.
+ * O envio em si é feito pelo n8n (que fala com o Chakra HQ / WhatsApp) — este
+ * app não guarda credencial nenhuma de WhatsApp. Só o TEXTO do template fica
+ * aqui, editável pela equipe, e é renderizado (com {{name}}/{{link}}
+ * substituídos) por api/messages/send-form.ts antes de acionar o n8n.
  */
 
-function maskPhone(v: string): string {
-  const d = v.replace(/\D/g, "").slice(0, 13);
-  if (d.length <= 2) return d ? `+${d}` : "";
-  if (d.length <= 4) return `+${d.slice(0, 2)} (${d.slice(2)}`;
-  if (d.length <= 9) return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4)}`;
-  return `+${d.slice(0, 2)} (${d.slice(2, 4)}) ${d.slice(4, 9)}-${d.slice(9)}`;
-}
-
-function WhatsappCard() {
+function ReminderTemplateCard() {
   const qc = useQueryClient();
-  const { data: whatsapp } = useQuery({
-    queryKey: ["whatsapp"],
-    queryFn: api.settings.getWhatsapp,
-  });
-  const { data: template } = useQuery({
-    queryKey: ["template"],
-    queryFn: api.settings.getTemplate,
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ["app-settings-reminder"],
+    queryFn: async () => {
+      const { data, error } = (await supabase
+        .from("app_settings")
+        .select("reminder_message_template")
+        .eq("id", true)
+        .maybeSingle()) as any;
+      if (error) throw error;
+      return { template: (data?.reminder_message_template as string) ?? "" };
+    },
   });
 
-  const [phone, setPhone] = useState("");
-  const [apiKey, setApiKey] = useState("");
   const [tpl, setTpl] = useState("");
-
   useEffect(() => {
-    if (whatsapp) {
-      setApiKey(whatsapp.apiKey || "");
-      setPhone(maskPhone(whatsapp.phoneNumberId || ""));
-    }
-  }, [whatsapp]);
-  useEffect(() => {
-    if (template) setTpl(template.body);
-  }, [template]);
+    if (settings) setTpl(settings.template);
+  }, [settings]);
 
-  const saveAll = useMutation({
+  const save = useMutation({
     mutationFn: async () => {
-      await api.settings.saveWhatsapp({ apiKey, phoneNumberId: phone.replace(/\D/g, "") });
-      await api.settings.saveTemplate({ body: tpl });
+      const { error } = await supabase
+        .from("app_settings")
+        .update({ reminder_message_template: tpl })
+        .eq("id", true);
+      if (error) throw error;
     },
     onSuccess: () => {
-      qc.invalidateQueries({ queryKey: ["whatsapp"] });
-      qc.invalidateQueries({ queryKey: ["template"] });
-      toast.success("Integração do WhatsApp salva");
+      qc.invalidateQueries({ queryKey: ["app-settings-reminder"] });
+      toast.success("Template salvo");
     },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
   });
 
   return (
     <SectionRow
-      title="WhatsApp Business API"
-      description="Envio automático de lembretes diários para os pacientes."
+      title="Mensagem de lembrete"
+      description="Texto enviado aos pacientes ao disparar o formulário (via n8n)."
     >
       <Card>
         <CardContent className="p-6 space-y-3">
           <div className="space-y-1.5">
-            <Label>Número do WhatsApp</Label>
-            <Input
-              placeholder="+55 (11) 99999-9999"
-              value={phone}
-              onChange={(e) => setPhone(maskPhone(e.target.value))}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>API Key / Token de acesso</Label>
-            <Input
-              type="password"
-              placeholder="••••••••"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label>Template de mensagem de lembrete</Label>
-            <Textarea rows={4} value={tpl} onChange={(e) => setTpl(e.target.value)} />
+            <Label>Template da mensagem</Label>
+            <Textarea rows={4} value={tpl} onChange={(e) => setTpl(e.target.value)} disabled={isLoading} />
             <p className="text-xs text-muted-foreground">
-              Variáveis disponíveis: <code>{"{nome}"}</code>, <code>{"{dias_sem_resposta}"}</code>,{" "}
-              <code>{"{link}"}</code>
+              Variáveis disponíveis: <code>{"{{name}}"}</code> (primeiro nome do paciente),{" "}
+              <code>{"{{link}}"}</code> (link do formulário).
             </p>
           </div>
-          <div className="flex gap-2">
-            <Button onClick={() => saveAll.mutate()} disabled={saveAll.isPending}>
-              Salvar
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => toast.success("Conexão testada com sucesso (mock)")}
-            >
-              Testar conexão
-            </Button>
-          </div>
+          <Button onClick={() => save.mutate()} disabled={save.isPending || isLoading}>
+            Salvar
+          </Button>
         </CardContent>
       </Card>
     </SectionRow>
