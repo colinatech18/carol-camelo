@@ -1,7 +1,17 @@
 /**
- * Standalone forms store (multi-form builder).
- * Persisted in localStorage so the rest of the system is untouched.
+ * Store de formulários dinâmicos, persistido no Supabase (tabela `forms`).
+ *
+ * Antes era um builder standalone em localStorage (mh.forms.v2), sem nenhuma
+ * ligação real com o formulário que o paciente respondia — que era sempre um
+ * conjunto fixo de 5 perguntas (src/lib/formQuestions.ts, hoje obsoleto).
+ * Agora os formulários criados aqui SÃO os formulários de verdade enviados
+ * aos pacientes (ver api/forms/get-by-token.ts e api/forms/submit.ts).
+ *
+ * `file`, `photo` e `signature` foram removidos deste recorte: exigiriam
+ * upload público por paciente sem sessão, com suas próprias questões de
+ * bucket/RLS/validação de arquivo — tratado como funcionalidade separada.
  */
+import { supabase } from "@/lib/supabase";
 
 export type FieldType =
   | "short_text"
@@ -16,9 +26,6 @@ export type FieldType =
   | "emoji_scale"
   | "money"
   | "url"
-  | "file"
-  | "photo"
-  | "signature"
   | "section"
   | "instruction";
 
@@ -55,11 +62,6 @@ export interface FormField {
   // date
   dateMin?: string;
   dateMax?: string;
-  // file / photo
-  acceptedTypes?: string;
-  maxSizeMb?: number;
-  // signature
-  penColor?: string;
 }
 
 export interface FormDef {
@@ -70,8 +72,6 @@ export interface FormDef {
   createdAt: string;
   fields: FormField[];
 }
-
-const KEY = "mh.forms.v2";
 
 const uid = () => Math.random().toString(36).slice(2, 11);
 
@@ -87,12 +87,6 @@ function defaultsFor(type: FieldType): Partial<FormField> {
       return { options: [{ id: uid(), label: "Opção 1" }, { id: uid(), label: "Opção 2" }] };
     case "money":
       return { currency: "BRL" };
-    case "file":
-      return { acceptedTypes: "PDF, JPG, PNG", maxSizeMb: 10 };
-    case "photo":
-      return { acceptedTypes: "JPG, PNG", maxSizeMb: 5 };
-    case "signature":
-      return { penColor: "#0f172a" };
     default:
       return {};
   }
@@ -112,7 +106,10 @@ export function labelForType(type: FieldType): string {
   return FIELD_META[type]?.label ?? type;
 }
 
-export const FIELD_META: Record<FieldType, { label: string; icon: string; category: "basic" | "choice" | "advanced" | "info" }> = {
+export const FIELD_META: Record<
+  FieldType,
+  { label: string; icon: string; category: "basic" | "choice" | "advanced" | "info" }
+> = {
   short_text: { label: "Texto curto", icon: "📝", category: "basic" },
   long_text: { label: "Texto longo", icon: "📄", category: "basic" },
   number: { label: "Número", icon: "🔢", category: "basic" },
@@ -125,126 +122,99 @@ export const FIELD_META: Record<FieldType, { label: string; icon: string; catego
   emoji_scale: { label: "Escala de emoji", icon: "😊", category: "choice" },
   money: { label: "Dinheiro", icon: "💰", category: "advanced" },
   url: { label: "Site / URL", icon: "🌐", category: "advanced" },
-  file: { label: "Arquivo", icon: "📎", category: "advanced" },
-  photo: { label: "Foto", icon: "📷", category: "advanced" },
-  signature: { label: "Assinatura", icon: "✍️", category: "advanced" },
   section: { label: "Título / Seção", icon: "💬", category: "info" },
   instruction: { label: "Instrução", icon: "ℹ️", category: "info" },
 };
 
-function seed(): FormDef[] {
-  const now = new Date().toISOString();
-  return [
-    {
-      id: "form_daily",
-      name: "Acompanhamento Diário",
-      description: "Formulário padrão dos 30 dias do programa.",
-      status: "active",
-      createdAt: now,
-      fields: [
-        { ...createField("scale", "Como você dormiu na última noite?") },
-        { ...createField("scale", "Houve pico de ansiedade ontem?") },
-        { ...createField("scale", "Como está seu nível de energia hoje?") },
-        { ...createField("scale", "Como foi sua alimentação?") },
-        { ...createField("scale", "Como você avalia seu humor geral?") },
-        { ...createField("long_text", "Gostaria de compartilhar algo mais?"), required: false, placeholder: "Opcional" },
-      ],
-    },
-    {
-      id: "form_initial",
-      name: "Avaliação Inicial",
-      description: "Aplicado na primeira consulta.",
-      status: "active",
-      createdAt: now,
-      fields: [
-        { ...createField("long_text", "Qual é o seu principal motivo para buscar acompanhamento?"), required: true },
-        { ...createField("radio", "Você faz uso de alguma medicação atualmente?"), options: [{ id: uid(), label: "Sim" }, { id: uid(), label: "Não" }], required: true },
-        { ...createField("short_text", "Se sim, qual medicação e dosagem?") },
-        {
-          ...createField("dropdown", "Com que frequência você pratica atividade física?"),
-          options: ["Nunca", "1-2x por semana", "3-4x por semana", "Todos os dias"].map((l) => ({ id: uid(), label: l })),
-        },
-        { ...createField("scale", "Como você avalia sua qualidade de sono atualmente?") },
-        { ...createField("number", "Peso atual"), unit: "kg", min: 0, max: 500 },
-        {
-          ...createField("dropdown", "Há quanto tempo você sente esses sintomas?"),
-          options: ["Menos de 1 mês", "1–6 meses", "6–12 meses", "Mais de 1 ano"].map((l) => ({ id: uid(), label: l })),
-        },
-        { ...createField("file", "Anexe exames recentes, se houver"), acceptedTypes: "PDF, JPG, PNG", maxSizeMb: 10 },
-      ],
-    },
-    {
-      id: "form_final",
-      name: "Avaliação Final",
-      description: "Aplicado na última consulta.",
+function fromRow(row: any): FormDef {
+  return {
+    id: row.id,
+    name: row.name,
+    description: row.description ?? "",
+    status: row.status,
+    createdAt: row.created_at,
+    fields: (row.fields ?? []) as FormField[],
+  };
+}
+
+export async function listForms(): Promise<FormDef[]> {
+  const { data, error } = await supabase.from("forms").select("*").order("created_at");
+  if (error) throw error;
+  return (data ?? []).map(fromRow);
+}
+
+export async function getForm(id: string): Promise<FormDef | undefined> {
+  const { data, error } = await supabase.from("forms").select("*").eq("id", id).maybeSingle();
+  if (error) throw error;
+  return data ? fromRow(data) : undefined;
+}
+
+export async function createForm(): Promise<FormDef> {
+  const { data: sessionData } = await supabase.auth.getSession();
+  const { data, error } = await supabase
+    .from("forms")
+    .insert({
+      name: "Novo formulário",
+      description: "",
       status: "draft",
-      createdAt: now,
       fields: [],
-    },
-  ];
+      created_by: sessionData.session?.user.id ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return fromRow(data);
 }
 
-export function loadForms(): FormDef[] {
-  if (typeof window === "undefined") return [];
-  const raw = localStorage.getItem(KEY);
-  if (!raw) {
-    const s = seed();
-    localStorage.setItem(KEY, JSON.stringify(s));
-    return s;
+export async function saveForm(form: FormDef): Promise<FormDef> {
+  const { data, error } = await supabase
+    .from("forms")
+    .update({
+      name: form.name,
+      description: form.description,
+      status: form.status,
+      fields: form.fields,
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", form.id)
+    .select()
+    .single();
+  if (error) throw error;
+  return fromRow(data);
+}
+
+export async function deleteForm(id: string): Promise<void> {
+  const { error } = await supabase.from("forms").delete().eq("id", id);
+  if (error) {
+    // 23503 = violação de FK: o formulário tem respostas registradas, ou está
+    // definido como padrão do sistema, ou atribuído a algum paciente.
+    if (error.code === "23503") {
+      throw new Error(
+        "Não é possível excluir: este formulário tem respostas registradas, está " +
+          "atribuído a algum paciente, ou é o formulário padrão do sistema.",
+      );
+    }
+    throw error;
   }
-  try { return JSON.parse(raw) as FormDef[]; } catch { return []; }
 }
 
-export function saveForms(forms: FormDef[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(KEY, JSON.stringify(forms));
-}
-
-export function getForm(id: string): FormDef | undefined {
-  return loadForms().find((f) => f.id === id);
-}
-
-export function upsertForm(form: FormDef) {
-  const all = loadForms();
-  const idx = all.findIndex((f) => f.id === form.id);
-  if (idx >= 0) all[idx] = form; else all.push(form);
-  saveForms(all);
-}
-
-export function deleteForm(id: string) {
-  saveForms(loadForms().filter((f) => f.id !== id));
-}
-
-export function duplicateForm(id: string): FormDef | undefined {
-  const all = loadForms();
-  const orig = all.find((f) => f.id === id);
-  if (!orig) return;
-  const copy: FormDef = {
-    ...orig,
-    id: "form_" + uid(),
-    name: orig.name + " (cópia)",
-    status: "draft",
-    createdAt: new Date().toISOString(),
-    fields: orig.fields.map((f) => ({ ...f, id: "f_" + uid() })),
-  };
-  all.push(copy);
-  saveForms(all);
-  return copy;
-}
-
-export function newEmptyForm(): FormDef {
-  const f: FormDef = {
-    id: "form_" + uid(),
-    name: "Novo formulário",
-    description: "",
-    status: "draft",
-    createdAt: new Date().toISOString(),
-    fields: [],
-  };
-  const all = loadForms();
-  all.push(f);
-  saveForms(all);
-  return f;
+export async function duplicateForm(id: string): Promise<FormDef> {
+  const orig = await getForm(id);
+  if (!orig) throw new Error("Formulário não encontrado");
+  const { data: sessionData } = await supabase.auth.getSession();
+  const { data, error } = await supabase
+    .from("forms")
+    .insert({
+      name: orig.name + " (cópia)",
+      description: orig.description,
+      status: "draft",
+      fields: orig.fields.map((f) => ({ ...f, id: "f_" + uid() })),
+      created_by: sessionData.session?.user.id ?? null,
+    })
+    .select()
+    .single();
+  if (error) throw error;
+  return fromRow(data);
 }
 
 export const newId = uid;

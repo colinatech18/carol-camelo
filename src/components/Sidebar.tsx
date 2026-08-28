@@ -1,8 +1,9 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, ClipboardList, FileText, Settings, LogOut, Brain, ChevronLeft, ChevronRight } from "lucide-react";
+import { LayoutDashboard, Users, ClipboardList, FileText, Settings, LogOut, ChevronLeft, ChevronRight } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
+import { ClinicLogo } from "@/components/ClinicLogo";
 import { useState } from "react";
 
 const ROLE_LABEL: Record<string, string> = {
@@ -35,9 +36,7 @@ export function Sidebar() {
     )}>
       {/* Header */}
       <div className="shrink-0 flex items-center gap-2 px-3 py-5 border-b border-sidebar-border relative">
-        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-sidebar-primary text-sidebar-primary-foreground">
-          <Brain className="h-5 w-5" />
-        </div>
+        <ClinicLogo className="h-9 w-9 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground" />
         {!collapsed && (
           <div className="leading-tight overflow-hidden">
             <div className="text-sm font-semibold">Vera PSI</div>

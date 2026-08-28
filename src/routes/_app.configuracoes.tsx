@@ -11,6 +11,8 @@ import {
   Search,
   KeyRound,
   Loader2,
+  ImageIcon,
+  X,
 } from "lucide-react";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -39,7 +41,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { api } from "@/services/api";
-import { loadForms } from "@/lib/forms-store";
+import { listForms } from "@/lib/forms-store";
 import {
   loadAppearance,
   saveAppearance,
@@ -51,6 +53,9 @@ import {
   type DateFormat,
 } from "@/lib/appearance";
 import { useAuth } from "@/lib/auth-context";
+import { getAuthHeader } from "@/lib/authHeader";
+import { getClinicBranding, uploadClinicLogo, removeClinicLogo } from "@/lib/clinicBranding";
+import { ClinicLogo } from "@/components/ClinicLogo";
 import { toast } from "sonner";
 import type { Role, User } from "@/types";
 import { supabase } from "@/lib/supabase";
@@ -128,6 +133,7 @@ function SettingsPage() {
 
         {user?.role === "admin" && (
           <TabsContent value="geral" className="space-y-6">
+            <BrandingCard />
             <TeamCard />
             <DefaultFormCard />
             <NotificationsCard />
@@ -148,6 +154,110 @@ function SettingsPage() {
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+/* ============================== MARCA / LOGO ============================== */
+
+function BrandingCard() {
+  const qc = useQueryClient();
+  const fileRef = useRef<HTMLInputElement | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  const { data: branding, isLoading } = useQuery({
+    queryKey: ["clinic-branding"],
+    queryFn: getClinicBranding,
+  });
+
+  const upload = useMutation({
+    mutationFn: uploadClinicLogo,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["clinic-branding"] });
+      toast.success("Logo atualizada");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar a logo"),
+  });
+
+  const remove = useMutation({
+    mutationFn: removeClinicLogo,
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["clinic-branding"] });
+      toast.success("Logo removida");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao remover a logo"),
+  });
+
+  function handleFile(file: File | null) {
+    if (!file) return;
+    setPreviewError(null);
+    upload.mutate(file, {
+      onError: (e) => setPreviewError(e instanceof Error ? e.message : "Erro ao enviar a logo"),
+    });
+  }
+
+  return (
+    <SectionRow
+      title="Marca"
+      description="Logo exibida na barra lateral, na tela de login e no formulário público enviado aos pacientes."
+    >
+      <Card>
+        <CardContent className="p-6 space-y-4">
+          <div className="flex items-center gap-4">
+            {isLoading ? (
+              <div className="h-16 w-16 rounded-lg border flex items-center justify-center">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            ) : (
+              <ClinicLogo className="h-16 w-16 rounded-lg border" />
+            )}
+            <div className="flex-1 space-y-2">
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={upload.isPending}
+                >
+                  {upload.isPending ? (
+                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                  ) : (
+                    <ImageIcon className="h-4 w-4 mr-2" />
+                  )}
+                  {branding?.logoUrl ? "Trocar logo" : "Enviar logo"}
+                </Button>
+                {branding?.logoUrl && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => remove.mutate()}
+                    disabled={remove.isPending}
+                  >
+                    {remove.isPending ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <X className="h-4 w-4 mr-2" />
+                    )}
+                    Remover
+                  </Button>
+                )}
+              </div>
+              <input
+                ref={fileRef}
+                type="file"
+                accept="image/png,image/jpeg,image/svg+xml,image/webp"
+                className="hidden"
+                onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
+              />
+              <p className="text-xs text-muted-foreground">
+                PNG, JPG, SVG ou WEBP · máximo 2MB. Fica visível publicamente (login e formulário
+                do paciente), então evite imagens com dados sensíveis.
+              </p>
+              {previewError && <p className="text-xs text-danger">{previewError}</p>}
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </SectionRow>
   );
 }
 
@@ -334,11 +444,14 @@ function TeamCard() {
     },
   });
 
+  // As três mutations abaixo chamam api/create-user.ts, api/update-user.ts e
+  // api/delete-user.ts, que agora exigem o header Authorization com o token da
+  // sessão atual (ver api/_lib/requireAdmin.ts) — sem isso, todas retornam 401.
   const createUser = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/create-user", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await getAuthHeader()) },
         body: JSON.stringify(addForm),
       });
       if (!res.ok) {
@@ -359,7 +472,7 @@ function TeamCard() {
       if (!editing) return;
       const res = await fetch("/api/update-user", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await getAuthHeader()) },
         body: JSON.stringify({ id: editing.id, name: editForm.name, role: editForm.role }),
       });
       if (!res.ok) {
@@ -379,7 +492,7 @@ function TeamCard() {
     mutationFn: async (id: string) => {
       const res = await fetch("/api/delete-user", {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", ...(await getAuthHeader()) },
         body: JSON.stringify({ id }),
       });
       if (!res.ok) {
@@ -642,33 +755,62 @@ function TeamCard() {
 /* ========================= FORMULÁRIO PADRÃO ========================= */
 
 function DefaultFormCard() {
-  const [forms] = useState(() => (typeof window !== "undefined" ? loadForms() : []));
-  const [selected, setSelected] = useState<string>(() => readLS(LS.defaultForm, ""));
+  const qc = useQueryClient();
+  const { data: forms = [] } = useQuery({ queryKey: ["forms"], queryFn: listForms });
+  const activeForms = forms.filter((f) => f.status === "active");
 
-  function save() {
-    writeLS(LS.defaultForm, selected);
-    toast.success("Formulário padrão salvo");
-  }
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ["app-settings"],
+    queryFn: async () => {
+      const { data, error } = (await supabase
+        .from("app_settings")
+        .select("default_form_id")
+        .eq("id", true)
+        .maybeSingle()) as any;
+      if (error) throw error;
+      return { defaultFormId: data?.default_form_id as string | null };
+    },
+  });
+
+  const [selected, setSelected] = useState<string>("");
+  useEffect(() => {
+    if (settings?.defaultFormId) setSelected(settings.defaultFormId);
+  }, [settings]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("app_settings")
+        .update({ default_form_id: selected })
+        .eq("id", true);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["app-settings"] });
+      toast.success("Formulário padrão salvo");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
+  });
 
   return (
     <SectionRow
       title="Formulário padrão"
-      description="Formulário diário enviado aos pacientes durante os 30 dias de acompanhamento."
+      description="Formulário enviado a pacientes sem um formulário específico atribuído."
     >
       <Card>
         <CardContent className="p-6 space-y-3">
           <div className="space-y-1.5">
             <Label>Formulário ativo</Label>
-            <Select value={selected} onValueChange={setSelected}>
+            <Select value={selected} onValueChange={setSelected} disabled={isLoading}>
               <SelectTrigger>
                 <SelectValue
                   placeholder={
-                    forms.length ? "Selecione um formulário" : "Nenhum formulário cadastrado"
+                    activeForms.length ? "Selecione um formulário" : "Nenhum formulário ativo cadastrado"
                   }
                 />
               </SelectTrigger>
               <SelectContent>
-                {forms.map((f) => (
+                {activeForms.map((f) => (
                   <SelectItem key={f.id} value={f.id}>
                     {f.name}
                   </SelectItem>
@@ -676,10 +818,12 @@ function DefaultFormCard() {
               </SelectContent>
             </Select>
             <p className="text-xs text-muted-foreground">
-              Cadastre formulários em <span className="font-medium">Formulários</span>.
+              Cadastre e edite formulários em <span className="font-medium">Formulários</span>. Um
+              paciente específico pode receber um formulário diferente deste (ver cadastro do
+              paciente).
             </p>
           </div>
-          <Button onClick={save} disabled={!selected}>
+          <Button onClick={() => save.mutate()} disabled={!selected || save.isPending}>
             Salvar
           </Button>
         </CardContent>
@@ -735,6 +879,12 @@ function NotificationsCard() {
 }
 
 /* ============================== WHATSAPP ============================== */
+/*
+ * ATENÇÃO: este card ainda usa src/services/api.ts (settingsApi), que só faz
+ * requisição real se VITE_API_URL estiver configurada — senão cai no
+ * mockBackend.ts e grava só em localStorage do navegador. Combinamos migrar
+ * isso para Supabase (mesmo padrão de TeamCard/BrandingCard) na próxima etapa.
+ */
 
 function maskPhone(v: string): string {
   const d = v.replace(/\D/g, "").slice(0, 13);

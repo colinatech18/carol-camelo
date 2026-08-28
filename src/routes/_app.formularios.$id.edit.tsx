@@ -1,7 +1,7 @@
 import { createFileRoute, getRouteApi, Link, useNavigate } from "@tanstack/react-router";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, ChevronDown, ChevronUp, GripVertical, Plus, Save, Trash2, X } from "lucide-react";
-
 
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -13,11 +13,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
 import {
-  getForm, upsertForm, createField, FIELD_META, newId,
-  type FormDef, type FormField, type FieldType, type FormStatus,
+  getForm,
+  saveForm,
+  createField,
+  FIELD_META,
+  newId,
+  type FormDef,
+  type FormField,
+  type FieldType,
+  type FormStatus,
 } from "@/lib/forms-store";
-
-// Route export is defined at the bottom (after FormEditor) to avoid forward references.
 
 const CATEGORIES: Array<{ id: "basic" | "choice" | "advanced" | "info"; label: string }> = [
   { id: "basic", label: "Básico" },
@@ -26,41 +31,44 @@ const CATEGORIES: Array<{ id: "basic" | "choice" | "advanced" | "info"; label: s
   { id: "info", label: "Informativo" },
 ];
 
-function makeNewForm(): FormDef {
-
-  const rid =
-    typeof crypto !== "undefined" && "randomUUID" in crypto
-      ? crypto.randomUUID()
-      : "form_" + newId();
-  return {
-    id: rid,
-    name: "Novo formulário",
-    description: "",
-    status: "draft",
-    createdAt: new Date().toISOString(),
-    fields: [],
-  };
-}
-
 function FormEditor() {
   const { id } = getRouteApi("/_app/formularios/$id/edit").useParams();
   const navigate = useNavigate();
+  const qc = useQueryClient();
   const [form, setForm] = useState<FormDef | null>(null);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const nameRef = useRef<HTMLInputElement>(null);
+
+  const { data, isLoading, isError } = useQuery({
+    queryKey: ["forms", id],
+    queryFn: () => getForm(id),
+    retry: false,
+  });
 
   useEffect(() => {
-    if (id === "new") {
-      setForm(makeNewForm());
-      setTimeout(() => { nameRef.current?.focus(); nameRef.current?.select(); }, 0);
-      return;
-    }
-    const f = getForm(id);
-    if (!f) { toast.error("Formulário não encontrado"); navigate({ to: "/formularios" }); return; }
-    setForm(f);
-  }, [id, navigate]);
+    if (data) setForm(data);
+  }, [data]);
 
-  if (!form) return <div className="p-8 text-muted-foreground">Carregando…</div>;
+  useEffect(() => {
+    if (!isLoading && (isError || (data === undefined && !isLoading))) {
+      // getForm resolve undefined quando o formulário não existe (id inválido/apagado).
+      if (data === undefined) {
+        toast.error("Formulário não encontrado");
+        navigate({ to: "/formularios" });
+      }
+    }
+  }, [isLoading, isError, data, navigate]);
+
+  const save = useMutation({
+    mutationFn: (f: FormDef) => saveForm(f),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["forms"] });
+      toast.success("Formulário salvo");
+      navigate({ to: "/formularios" });
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
+  });
+
+  if (isLoading || !form) return <div className="p-8 text-muted-foreground">Carregando…</div>;
 
   const update = (patch: Partial<FormDef>) => setForm({ ...form, ...patch });
 
@@ -88,12 +96,6 @@ function FormEditor() {
     update({ fields: copy });
   };
 
-  const save = () => {
-    upsertForm(form);
-    toast.success("Formulário salvo");
-    navigate({ to: "/formularios" });
-  };
-
   const cancel = () => navigate({ to: "/formularios" });
 
   return (
@@ -102,17 +104,14 @@ function FormEditor() {
         <ArrowLeft className="h-4 w-4 mr-1" /> Formulários
       </Link>
 
-
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div className="flex-1 min-w-[260px] space-y-2">
           <Input
-            ref={nameRef}
             value={form.name}
             onChange={(e) => update({ name: e.target.value })}
             className="text-xl font-semibold h-auto py-2 px-3"
             placeholder="Nome do formulário"
           />
-
           <Textarea
             value={form.description}
             onChange={(e) => update({ description: e.target.value })}
@@ -122,16 +121,21 @@ function FormEditor() {
         </div>
         <div className="flex items-center gap-2">
           <Select value={form.status} onValueChange={(v: FormStatus) => update({ status: v })}>
-            <SelectTrigger className="w-36"><SelectValue /></SelectTrigger>
+            <SelectTrigger className="w-36">
+              <SelectValue />
+            </SelectTrigger>
             <SelectContent>
               <SelectItem value="active">Ativo</SelectItem>
               <SelectItem value="draft">Rascunho</SelectItem>
               <SelectItem value="archived">Arquivado</SelectItem>
             </SelectContent>
           </Select>
-          <Button variant="outline" onClick={cancel}>Cancelar</Button>
-          <Button onClick={save}><Save className="h-4 w-4 mr-2" /> Salvar</Button>
-
+          <Button variant="outline" onClick={cancel}>
+            Cancelar
+          </Button>
+          <Button onClick={() => save.mutate(form)} disabled={save.isPending}>
+            <Save className="h-4 w-4 mr-2" /> Salvar
+          </Button>
         </div>
       </div>
 
@@ -139,13 +143,17 @@ function FormEditor() {
         {/* Palette */}
         <div className="lg:col-span-2 space-y-5">
           <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-base">Tipos de pergunta</CardTitle></CardHeader>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base">Tipos de pergunta</CardTitle>
+            </CardHeader>
             <CardContent className="space-y-5">
               {CATEGORIES.map((cat) => (
                 <div key={cat.id}>
-                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">{cat.label}</div>
+                  <div className="text-xs font-semibold uppercase tracking-wide text-muted-foreground mb-2">
+                    {cat.label}
+                  </div>
                   <div className="grid grid-cols-2 gap-2">
-                    {(Object.entries(FIELD_META) as [FieldType, typeof FIELD_META[FieldType]][])
+                    {(Object.entries(FIELD_META) as [FieldType, (typeof FIELD_META)[FieldType]][])
                       .filter(([, m]) => m.category === cat.id)
                       .map(([type, m]) => (
                         <button
@@ -195,12 +203,42 @@ function FormEditor() {
                       <span className="flex-1 truncate text-sm font-medium">
                         {f.label || <span className="text-muted-foreground italic">Sem enunciado</span>}
                       </span>
-                      <Badge variant="outline" className="text-xs">{meta.label}</Badge>
-                      {f.required && <Badge className="text-xs bg-danger/10 text-danger border-danger/30" variant="outline">*</Badge>}
+                      <Badge variant="outline" className="text-xs">
+                        {meta.label}
+                      </Badge>
+                      {f.required && (
+                        <Badge className="text-xs bg-danger/10 text-danger border-danger/30" variant="outline">
+                          *
+                        </Badge>
+                      )}
                       <div className="flex items-center gap-0.5 ml-1">
-                        <span onClick={(e) => { e.stopPropagation(); move(f.id, -1); }} className="p-1 rounded hover:bg-accent cursor-pointer"><ChevronUp className="h-3.5 w-3.5" /></span>
-                        <span onClick={(e) => { e.stopPropagation(); move(f.id, 1); }} className="p-1 rounded hover:bg-accent cursor-pointer"><ChevronDown className="h-3.5 w-3.5" /></span>
-                        <span onClick={(e) => { e.stopPropagation(); removeField(f.id); }} className="p-1 rounded hover:bg-danger/10 text-danger cursor-pointer"><Trash2 className="h-3.5 w-3.5" /></span>
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            move(f.id, -1);
+                          }}
+                          className="p-1 rounded hover:bg-accent cursor-pointer"
+                        >
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        </span>
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            move(f.id, 1);
+                          }}
+                          className="p-1 rounded hover:bg-accent cursor-pointer"
+                        >
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        </span>
+                        <span
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            removeField(f.id);
+                          }}
+                          className="p-1 rounded hover:bg-danger/10 text-danger cursor-pointer"
+                        >
+                          <Trash2 className="h-3.5 w-3.5" />
+                        </span>
                       </div>
                     </button>
                     {isSel && (
@@ -219,22 +257,32 @@ function FormEditor() {
   );
 }
 
-function FieldConfig({ field, onChange, onClose }: { field: FormField; onChange: (p: Partial<FormField>) => void; onClose: () => void }) {
+function FieldConfig({
+  field,
+  onChange,
+  onClose,
+}: {
+  field: FormField;
+  onChange: (p: Partial<FormField>) => void;
+  onClose: () => void;
+}) {
   const t = field.type;
   const isInfo = t === "section" || t === "instruction";
 
   const setOptions = (next: NonNullable<FormField["options"]>) => onChange({ options: next });
-  const addOption = () => setOptions([...(field.options ?? []), { id: newId(), label: `Opção ${(field.options?.length ?? 0) + 1}` }]);
+  const addOption = () =>
+    setOptions([...(field.options ?? []), { id: newId(), label: `Opção ${(field.options?.length ?? 0) + 1}` }]);
   const updateOption = (oid: string, label: string) =>
     setOptions((field.options ?? []).map((o) => (o.id === oid ? { ...o, label } : o)));
-  const removeOption = (oid: string) =>
-    setOptions((field.options ?? []).filter((o) => o.id !== oid));
+  const removeOption = (oid: string) => setOptions((field.options ?? []).filter((o) => o.id !== oid));
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <div className="text-sm font-semibold">Configurar pergunta</div>
-        <Button variant="ghost" size="icon" onClick={onClose}><X className="h-4 w-4" /></Button>
+        <Button variant="ghost" size="icon" onClick={onClose}>
+          <X className="h-4 w-4" />
+        </Button>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -246,41 +294,82 @@ function FieldConfig({ field, onChange, onClose }: { field: FormField; onChange:
         {!isInfo && (
           <div className="md:col-span-2 space-y-1.5">
             <Label className="text-xs">Descrição / instrução auxiliar</Label>
-            <Textarea value={field.description ?? ""} onChange={(e) => onChange({ description: e.target.value })} className="min-h-[60px]" />
+            <Textarea
+              value={field.description ?? ""}
+              onChange={(e) => onChange({ description: e.target.value })}
+              className="min-h-[60px]"
+            />
           </div>
         )}
 
         {!isInfo && (
           <>
             <ToggleRow label="Obrigatório" checked={!!field.required} onChange={(v) => onChange({ required: v })} />
-            <ToggleRow label="Permitir comentário adicional" checked={!!field.allowComment} onChange={(v) => onChange({ allowComment: v })} />
+            <ToggleRow
+              label="Permitir comentário adicional"
+              checked={!!field.allowComment}
+              onChange={(v) => onChange({ allowComment: v })}
+            />
           </>
         )}
       </div>
 
-      {/* Type-specific config */}
       {(t === "short_text" || t === "long_text") && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Field label="Placeholder"><Input value={field.placeholder ?? ""} onChange={(e) => onChange({ placeholder: e.target.value })} /></Field>
-          <Field label="Limite de caracteres"><Input type="number" value={field.maxLength ?? ""} onChange={(e) => onChange({ maxLength: e.target.value ? Number(e.target.value) : undefined })} /></Field>
+          <Field label="Placeholder">
+            <Input value={field.placeholder ?? ""} onChange={(e) => onChange({ placeholder: e.target.value })} />
+          </Field>
+          <Field label="Limite de caracteres">
+            <Input
+              type="number"
+              value={field.maxLength ?? ""}
+              onChange={(e) => onChange({ maxLength: e.target.value ? Number(e.target.value) : undefined })}
+            />
+          </Field>
         </div>
       )}
 
       {t === "number" && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <Field label="Mínimo"><Input type="number" value={field.min ?? ""} onChange={(e) => onChange({ min: e.target.value ? Number(e.target.value) : undefined })} /></Field>
-          <Field label="Máximo"><Input type="number" value={field.max ?? ""} onChange={(e) => onChange({ max: e.target.value ? Number(e.target.value) : undefined })} /></Field>
-          <Field label="Unidade"><Input value={field.unit ?? ""} onChange={(e) => onChange({ unit: e.target.value })} placeholder="kg, cm, h" /></Field>
+          <Field label="Mínimo">
+            <Input
+              type="number"
+              value={field.min ?? ""}
+              onChange={(e) => onChange({ min: e.target.value ? Number(e.target.value) : undefined })}
+            />
+          </Field>
+          <Field label="Máximo">
+            <Input
+              type="number"
+              value={field.max ?? ""}
+              onChange={(e) => onChange({ max: e.target.value ? Number(e.target.value) : undefined })}
+            />
+          </Field>
+          <Field label="Unidade">
+            <Input value={field.unit ?? ""} onChange={(e) => onChange({ unit: e.target.value })} placeholder="kg, cm, h" />
+          </Field>
         </div>
       )}
 
       {t === "scale" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Field label="Mínimo"><Input type="number" value={field.min ?? 1} onChange={(e) => onChange({ min: Number(e.target.value) })} /></Field>
-          <Field label="Máximo"><Input type="number" value={field.max ?? 5} onChange={(e) => onChange({ max: Number(e.target.value) })} /></Field>
-          <Field label="Label do mínimo"><Input value={field.minLabel ?? ""} onChange={(e) => onChange({ minLabel: e.target.value })} /></Field>
-          <Field label="Label do máximo"><Input value={field.maxLabel ?? ""} onChange={(e) => onChange({ maxLabel: e.target.value })} /></Field>
-          <ToggleRow label="Exibir números" checked={field.showNumbers !== false} onChange={(v) => onChange({ showNumbers: v })} />
+          <Field label="Mínimo">
+            <Input type="number" value={field.min ?? 1} onChange={(e) => onChange({ min: Number(e.target.value) })} />
+          </Field>
+          <Field label="Máximo">
+            <Input type="number" value={field.max ?? 5} onChange={(e) => onChange({ max: Number(e.target.value) })} />
+          </Field>
+          <Field label="Label do mínimo">
+            <Input value={field.minLabel ?? ""} onChange={(e) => onChange({ minLabel: e.target.value })} />
+          </Field>
+          <Field label="Label do máximo">
+            <Input value={field.maxLabel ?? ""} onChange={(e) => onChange({ maxLabel: e.target.value })} />
+          </Field>
+          <ToggleRow
+            label="Exibir números"
+            checked={field.showNumbers !== false}
+            onChange={(v) => onChange({ showNumbers: v })}
+          />
         </div>
       )}
 
@@ -291,40 +380,49 @@ function FieldConfig({ field, onChange, onClose }: { field: FormField; onChange:
             {(field.options ?? []).map((o) => (
               <div key={o.id} className="flex items-center gap-2">
                 <Input value={o.label} onChange={(e) => updateOption(o.id, e.target.value)} />
-                <Button variant="ghost" size="icon" onClick={() => removeOption(o.id)}><Trash2 className="h-4 w-4 text-danger" /></Button>
+                <Button variant="ghost" size="icon" onClick={() => removeOption(o.id)}>
+                  <Trash2 className="h-4 w-4 text-danger" />
+                </Button>
               </div>
             ))}
           </div>
-          <Button variant="outline" size="sm" onClick={addOption}><Plus className="h-3.5 w-3.5 mr-1.5" /> Adicionar opção</Button>
+          <Button variant="outline" size="sm" onClick={addOption}>
+            <Plus className="h-3.5 w-3.5 mr-1.5" /> Adicionar opção
+          </Button>
           {(t === "radio" || t === "checkbox" || t === "dropdown") && (
-            <ToggleRow label='Opção "Outro (especificar)"' checked={!!field.allowOther} onChange={(v) => onChange({ allowOther: v })} />
+            <ToggleRow
+              label='Opção "Outro (especificar)"'
+              checked={!!field.allowOther}
+              onChange={(v) => onChange({ allowOther: v })}
+            />
           )}
           {t === "checkbox" && (
-            <Field label="Máximo de seleções"><Input type="number" value={field.maxSelections ?? ""} onChange={(e) => onChange({ maxSelections: e.target.value ? Number(e.target.value) : undefined })} /></Field>
+            <Field label="Máximo de seleções">
+              <Input
+                type="number"
+                value={field.maxSelections ?? ""}
+                onChange={(e) => onChange({ maxSelections: e.target.value ? Number(e.target.value) : undefined })}
+              />
+            </Field>
           )}
         </div>
       )}
 
       {t === "date" && (
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Field label="Data mínima"><Input type="date" value={field.dateMin ?? ""} onChange={(e) => onChange({ dateMin: e.target.value })} /></Field>
-          <Field label="Data máxima"><Input type="date" value={field.dateMax ?? ""} onChange={(e) => onChange({ dateMax: e.target.value })} /></Field>
+          <Field label="Data mínima">
+            <Input type="date" value={field.dateMin ?? ""} onChange={(e) => onChange({ dateMin: e.target.value })} />
+          </Field>
+          <Field label="Data máxima">
+            <Input type="date" value={field.dateMax ?? ""} onChange={(e) => onChange({ dateMax: e.target.value })} />
+          </Field>
         </div>
       )}
 
       {t === "money" && (
-        <Field label="Moeda"><Input value={field.currency ?? "BRL"} onChange={(e) => onChange({ currency: e.target.value })} /></Field>
-      )}
-
-      {(t === "file" || t === "photo") && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <Field label="Tipos aceitos"><Input value={field.acceptedTypes ?? ""} onChange={(e) => onChange({ acceptedTypes: e.target.value })} placeholder="PDF, JPG, PNG" /></Field>
-          <Field label="Tamanho máximo (MB)"><Input type="number" value={field.maxSizeMb ?? ""} onChange={(e) => onChange({ maxSizeMb: e.target.value ? Number(e.target.value) : undefined })} /></Field>
-        </div>
-      )}
-
-      {t === "signature" && (
-        <Field label="Cor da caneta"><Input type="color" value={field.penColor ?? "#0f172a"} onChange={(e) => onChange({ penColor: e.target.value })} className="h-10 w-20 p-1" /></Field>
+        <Field label="Moeda">
+          <Input value={field.currency ?? "BRL"} onChange={(e) => onChange({ currency: e.target.value })} />
+        </Field>
       )}
     </div>
   );
@@ -349,4 +447,3 @@ function ToggleRow({ label, checked, onChange }: { label: string; checked: boole
 }
 
 export const Route = createFileRoute("/_app/formularios/$id/edit")({ component: FormEditor });
-

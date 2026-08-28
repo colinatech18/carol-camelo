@@ -1,10 +1,11 @@
 import { createFileRoute, useNavigate, useSearch } from "@tanstack/react-router";
 import { useState } from "react";
-import { Brain, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ClinicLogo } from "@/components/ClinicLogo";
 import { toast } from "sonner";
 
 export const Route = createFileRoute("/login")({
@@ -37,9 +38,7 @@ function LoginPage() {
     <div className="min-h-screen grid lg:grid-cols-2">
       <div className="hidden lg:flex flex-col justify-between p-12 bg-gradient-to-br from-primary to-accent-foreground text-primary-foreground">
         <div className="flex items-center gap-2">
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-white/15 backdrop-blur">
-            <Brain className="h-6 w-6" />
-          </div>
+          <ClinicLogo className="h-10 w-10 rounded-xl bg-white/15 backdrop-blur" />
           <span className="text-lg font-semibold">Vera PSI</span>
         </div>
         <div className="space-y-3 max-w-md">
