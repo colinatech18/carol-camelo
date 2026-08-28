@@ -1,6 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { createHash, timingSafeEqual } from "node:crypto";
+import { internalError } from "../_lib/errorResponse";
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL!,
@@ -28,6 +29,9 @@ function normalizePhone(raw: string): string {
 
 type Direction = "inbound" | "outbound";
 
+const MAX_CONTENT_LENGTH = 4096;
+const VALID_CONTENT_TYPES = ["text", "image", "audio", "video", "document"];
+
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST") return res.status(405).json({ error: "Method not allowed" });
 
@@ -51,10 +55,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   };
 
   const phoneRaw = typeof body.phone === "string" ? body.phone : "";
-  const content = typeof body.content === "string" ? body.content : "";
+  const content = typeof body.content === "string" ? body.content.slice(0, MAX_CONTENT_LENGTH) : "";
   const direction = body.direction;
-  const contentType =
+  const contentTypeRaw =
     typeof body.contentType === "string" && body.contentType.trim() ? body.contentType : "text";
+  const contentType = VALID_CONTENT_TYPES.includes(contentTypeRaw) ? contentTypeRaw : "text";
 
   // Normaliza para a forma canônica (dígitos + DDI 55, ver normalizePhone). O cadastro
   // grava patients.phone como o usuário digitou — sem máscara e, às vezes, sem o 55 —
@@ -74,9 +79,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .from("patients")
     .select("id, phone");
 
-  if (lookupError) {
-    return res.status(500).json({ error: lookupError.message });
-  }
+  if (lookupError) return internalError(res, "messages/inbound:lookup", lookupError);
 
   const match = ((patientRows ?? []) as Array<{ id: string; phone: string | null }>).find(
     (p) => {
@@ -95,9 +98,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     content_type: contentType,
   });
 
-  if (insertError) {
-    return res.status(500).json({ error: insertError.message });
-  }
+  if (insertError) return internalError(res, "messages/inbound:insert", insertError);
 
   return res.status(200).json({
     ok: true,

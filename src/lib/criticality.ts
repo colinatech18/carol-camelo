@@ -8,9 +8,22 @@ export function programDay(startDate: string, today: Date = new Date()): number 
   return Math.min(30, Math.max(1, differenceInCalendarDays(today, parseISO(startDate)) + 1));
 }
 
+/**
+ * Média das respostas de campo tipo ESCALA de uma entrada (scale/emoji_scale —
+ * marcadas com `isScale`). Deliberadamente ignora outros campos numéricos (ex.:
+ * um campo "Peso (kg)" cadastrado num formulário dinâmico) para não distorcer o
+ * índice de criticidade, que assume uma escala 1–5 de bem-estar.
+ *
+ * `isScale` ausente é tratado como true: preserva o comportamento de respostas
+ * gravadas antes da migração para formulários dinâmicos, quando só existiam
+ * perguntas de escala.
+ */
 export function averageOfEntry(e: ResponseEntry): number {
-  if (!e.answers.length) return 0;
-  return e.answers.reduce((s, a) => s + a.value, 0) / e.answers.length;
+  const scoreable = e.answers.filter(
+    (a): a is typeof a & { value: number } => typeof a.value === "number" && a.isScale !== false,
+  );
+  if (!scoreable.length) return 0;
+  return scoreable.reduce((s, a) => s + a.value, 0) / scoreable.length;
 }
 
 export function criticalityFromResponses(responses: ResponseEntry[]): Criticality {

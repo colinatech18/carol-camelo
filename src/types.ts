@@ -25,6 +25,9 @@ export interface Patient {
   responsibleId: string;
   status: PatientStatus;
   publicToken: string;
+  // Formulário atribuído a este paciente. Ausente/undefined = usa o formulário
+  // padrão do sistema (app_settings.default_form_id).
+  assignedFormId?: string;
 }
 
 export interface Question {
@@ -38,7 +41,20 @@ export interface ResponseEntry {
   patientId: string;
   date: string; // ISO date (yyyy-MM-dd)
   programDay: number; // 1..30
-  answers: Array<{ questionId: string; value: number; note?: string }>;
+  // Formulário respondido. Ausente em respostas anteriores à migração para
+  // formulários dinâmicos (todas do "Acompanhamento Diário" fixo).
+  formId?: string;
+  answers: Array<{
+    questionId: string;
+    // Amplo o suficiente para qualquer tipo de campo do construtor dinâmico
+    // (texto, número, data/hora, opção única, múltipla escolha).
+    value: number | string | string[];
+    note?: string;
+    // Marca respostas de campo tipo escala — usado em criticality.ts para não
+    // misturar, por exemplo, um campo "Peso (kg)" no cálculo de criticidade.
+    // Ausente = tratado como true (respostas históricas eram todas de escala).
+    isScale?: boolean;
+  }>;
   createdAt: string;
 }
 

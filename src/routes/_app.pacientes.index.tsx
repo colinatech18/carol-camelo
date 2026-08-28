@@ -1,16 +1,40 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Search, Pencil, Download, ArrowUp, ArrowDown, ArrowUpDown } from "lucide-react";
+import {
+  Plus,
+  Search,
+  Pencil,
+  Download,
+  ArrowUp,
+  ArrowDown,
+  ArrowUpDown,
+  Archive,
+  ArchiveRestore,
+  X,
+} from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog";
 import { CriticalityBadge } from "@/components/CriticalityBadge";
 import { useEnrichedPatients } from "@/hooks/useEnrichedPatients";
+import { listForms } from "@/lib/forms-store";
 import { supabase } from "@/lib/supabase";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
@@ -71,12 +95,14 @@ type PatientForm = {
   responsibleId: string;
   status: "active" | "completed" | "paused";
   notes: string;
+  // "" = usa o formulário padrão do sistema (app_settings.default_form_id).
+  assignedFormId: string;
 };
 
 const emptyForm: PatientForm = {
   name: "", email: "", whatsapp: "",
   startDate: new Date().toISOString().slice(0, 10),
-  responsibleId: "", status: "active", notes: "",
+  responsibleId: "", status: "active", notes: "", assignedFormId: "",
 };
 
 // Escapa uma célula para CSV com delimitador ";" (mais amigável ao Excel pt-BR).
@@ -88,7 +114,9 @@ function csvCell(v: unknown) {
 function PatientsList() {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  const { data: patients = [], isLoading } = useEnrichedPatients();
+  // Sempre busca ativos + arquivados juntos (uma só ida ao banco); a alternância
+  // "Ativos" / "Arquivados" abaixo filtra localmente qual conjunto é exibido.
+  const { data: allPatients = [], isLoading } = useEnrichedPatients({ includeArchived: true });
   const { data: users = [] } = useQuery({
     queryKey: ["users"],
     queryFn: async () => {
@@ -97,16 +125,29 @@ function PatientsList() {
       return data as Array<{ id: string; name: string }>;
     },
   });
+  const { data: forms = [] } = useQuery({ queryKey: ["forms"], queryFn: listForms });
+  const activeForms = useMemo(() => forms.filter((f) => f.status === "active"), [forms]);
 
   const [q, setQ] = useState("");
   const [statusFilter, setStatusFilter] = useState<"all" | "active" | "paused" | "completed">("all");
+  const [viewArchived, setViewArchived] = useState(false);
   const [sortBy, setSortBy] = useState<SortKey>("name");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("asc");
   const [open, setOpen] = useState(false);
   const [editing, setEditing] = useState<Patient | null>(null);
   const [form, setForm] = useState<PatientForm>(emptyForm);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkStatus, setBulkStatus] = useState<PatientForm["status"]>("active");
+  const [confirmArchiveOpen, setConfirmArchiveOpen] = useState(false);
 
   const userName = (id: string) => users.find((u) => u.id === id)?.name ?? "";
+
+  const patients = useMemo(
+    () => allPatients.filter((p) => (viewArchived ? !!p.archivedAt : !p.archivedAt)),
+    [allPatients, viewArchived],
+  );
+  const activeCount = useMemo(() => allPatients.filter((p) => !p.archivedAt).length, [allPatients]);
+  const archivedCount = allPatients.length - activeCount;
 
   const filtered = useMemo(() => {
     const term = q.toLowerCase();
@@ -142,6 +183,12 @@ function PatientsList() {
     });
     return arr;
   }, [filtered, sortBy, sortDir]);
+
+  // Troca de visão (Ativos/Arquivados) ou de filtro limpa a seleção — evita
+  // aplicar uma ação em massa sobre uma linha que não está mais visível.
+  useEffect(() => {
+    setSelected(new Set());
+  }, [viewArchived, statusFilter, q]);
 
   function toggleSort(key: SortKey) {
     if (sortBy === key) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
@@ -212,6 +259,7 @@ function PatientsList() {
       responsibleId: p.responsibleId ?? "",
       status: p.status,
       notes: "",
+      assignedFormId: p.assignedFormId ?? "",
     });
     setOpen(true);
   }
@@ -226,6 +274,7 @@ function PatientsList() {
           program_start_date: form.startDate,
           status: form.status,
           responsible_id: form.responsibleId || null,
+          assigned_form_id: form.assignedFormId || null,
         }).eq("id", editing.id)) as any;
         if (error) throw error;
       } else {
@@ -239,6 +288,7 @@ function PatientsList() {
           notes: form.notes,
           public_token: token,
           responsible_id: form.responsibleId || null,
+          assigned_form_id: form.assignedFormId || null,
         })) as any;
         if (error) throw error;
         const url = `${window.location.origin}/formulario/${token}`;
@@ -253,6 +303,74 @@ function PatientsList() {
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
   });
+
+  // ---------------------------------------------------------------------
+  // Ações em massa
+  // ---------------------------------------------------------------------
+
+  const selectedIds = useMemo(() => Array.from(selected), [selected]);
+
+  function toggleSelectAll(checked: boolean) {
+    setSelected(checked ? new Set(sorted.map((p) => p.id)) : new Set());
+  }
+  function toggleSelectOne(id: string, checked: boolean) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (checked) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }
+
+  const bulkChangeStatus = useMutation({
+    mutationFn: async ({ ids, status }: { ids: string[]; status: PatientForm["status"] }) => {
+      const { error } = await supabase.from("patients").update({ status }).in("id", ids);
+      if (error) throw error;
+    },
+    onSuccess: (_data, { ids }) => {
+      qc.invalidateQueries({ queryKey: ["patients", "enriched"] });
+      setSelected(new Set());
+      toast.success(`Status atualizado para ${ids.length} paciente(s)`);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar status"),
+  });
+
+  const bulkArchive = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const { error } = await supabase
+        .from("patients")
+        .update({ archived_at: new Date().toISOString(), archived_by: sessionData.session?.user.id ?? null })
+        .in("id", ids);
+      if (error) throw error;
+    },
+    onSuccess: (_data, ids) => {
+      qc.invalidateQueries({ queryKey: ["patients", "enriched"] });
+      setSelected(new Set());
+      setConfirmArchiveOpen(false);
+      toast.success(`${ids.length} paciente(s) arquivado(s)`);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao arquivar"),
+  });
+
+  const bulkRestore = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const { error } = await supabase
+        .from("patients")
+        .update({ archived_at: null, archived_by: null })
+        .in("id", ids);
+      if (error) throw error;
+    },
+    onSuccess: (_data, ids) => {
+      qc.invalidateQueries({ queryKey: ["patients", "enriched"] });
+      setSelected(new Set());
+      toast.success(`${ids.length} paciente(s) restaurado(s)`);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao restaurar"),
+  });
+
+  const allVisibleSelected = sorted.length > 0 && selected.size === sorted.length;
+  const someVisibleSelected = selected.size > 0 && !allVisibleSelected;
 
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
@@ -282,6 +400,101 @@ function PatientsList() {
         </div>
       </div>
 
+      {/* Alternância Ativos / Arquivados */}
+      <div className="inline-flex rounded-md border p-0.5 bg-muted/40">
+        <button
+          type="button"
+          onClick={() => setViewArchived(false)}
+          className={cn(
+            "px-3 py-1.5 text-sm rounded-sm transition-colors",
+            !viewArchived ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          Ativos ({activeCount})
+        </button>
+        <button
+          type="button"
+          onClick={() => setViewArchived(true)}
+          className={cn(
+            "px-3 py-1.5 text-sm rounded-sm transition-colors",
+            viewArchived ? "bg-background shadow-sm font-medium" : "text-muted-foreground hover:text-foreground",
+          )}
+        >
+          Arquivados ({archivedCount})
+        </button>
+      </div>
+
+      {/* Barra de ação em massa */}
+      {selected.size > 0 && (
+        <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-4 py-2.5">
+          <span className="text-sm font-medium">{selected.size} selecionado(s)</span>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            <X className="h-3.5 w-3.5 mr-1" /> Limpar
+          </Button>
+          <div className="flex-1" />
+
+          {!viewArchived && (
+            <>
+              <Select value={bulkStatus} onValueChange={(v) => setBulkStatus(v as PatientForm["status"])}>
+                <SelectTrigger className="w-40 h-9"><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Ativo</SelectItem>
+                  <SelectItem value="paused">Pausado</SelectItem>
+                  <SelectItem value="completed">Concluído</SelectItem>
+                </SelectContent>
+              </Select>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={bulkChangeStatus.isPending}
+                onClick={() => bulkChangeStatus.mutate({ ids: selectedIds, status: bulkStatus })}
+              >
+                Mudar status
+              </Button>
+
+              <AlertDialog open={confirmArchiveOpen} onOpenChange={setConfirmArchiveOpen}>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="outline">
+                    <Archive className="h-3.5 w-3.5 mr-1.5" /> Arquivar
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Arquivar {selected.size} paciente(s)?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Eles saem da listagem de pacientes ativos, mas todo o histórico — mensagens,
+                      prontuário e respostas de formulário — é mantido intacto. Você pode restaurá-los
+                      a qualquer momento pela aba &quot;Arquivados&quot;.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction onClick={() => bulkArchive.mutate(selectedIds)}>
+                      Arquivar
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+
+              <Button size="sm" variant="outline" disabled title="Depende da integração de envio (em breve)">
+                Enviar mensagem
+              </Button>
+            </>
+          )}
+
+          {viewArchived && (
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={bulkRestore.isPending}
+              onClick={() => bulkRestore.mutate(selectedIds)}
+            >
+              <ArchiveRestore className="h-3.5 w-3.5 mr-1.5" /> Restaurar
+            </Button>
+          )}
+        </div>
+      )}
+
       <Card>
         <CardContent className="p-0">
           {isLoading ? (
@@ -291,6 +504,13 @@ function PatientsList() {
               <Table>
                 <TableHeader>
                   <TableRow>
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={allVisibleSelected ? true : someVisibleSelected ? "indeterminate" : false}
+                        onCheckedChange={(v) => toggleSelectAll(Boolean(v))}
+                        aria-label="Selecionar todos"
+                      />
+                    </TableHead>
                     {sortHead("Paciente", "name")}
                     <TableHead>Responsável</TableHead>
                     {sortHead("Início", "startDate", "hidden md:table-cell")}
@@ -305,12 +525,21 @@ function PatientsList() {
                     const pct = Math.round((p.programDay / 30) * 100);
                     const respName = userName(p.responsibleId);
                     const contact = [p.email, p.whatsapp].filter(Boolean).join(" · ");
+                    const isSelected = selected.has(p.id);
                     return (
                       <TableRow
                         key={p.id}
+                        data-state={isSelected ? "selected" : undefined}
                         className="cursor-pointer"
                         onClick={() => navigate({ to: "/pacientes/$id", params: { id: p.id } })}
                       >
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={(v) => toggleSelectOne(p.id, Boolean(v))}
+                            aria-label={`Selecionar ${p.name}`}
+                          />
+                        </TableCell>
                         <TableCell>
                           <div className="flex items-center gap-3 min-w-0">
                             <div className={cn("h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold", avatarColor(p.name))}>
@@ -354,18 +583,20 @@ function PatientsList() {
                             {STATUS_LABEL[p.status]}
                           </span>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <Button size="icon" variant="ghost" onClick={(e) => openEdit(p, e)}>
-                            <Pencil className="h-4 w-4" />
-                          </Button>
+                        <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                          {!viewArchived && (
+                            <Button size="icon" variant="ghost" onClick={(e) => openEdit(p, e)}>
+                              <Pencil className="h-4 w-4" />
+                            </Button>
+                          )}
                         </TableCell>
                       </TableRow>
                     );
                   })}
                   {sorted.length === 0 && (
                     <TableRow>
-                      <TableCell colSpan={7} className="text-center text-muted-foreground py-10">
-                        Nenhum paciente encontrado.
+                      <TableCell colSpan={8} className="text-center text-muted-foreground py-10">
+                        {viewArchived ? "Nenhum paciente arquivado." : "Nenhum paciente encontrado."}
                       </TableCell>
                     </TableRow>
                   )}
@@ -421,6 +652,23 @@ function PatientsList() {
                     {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
+              </div>
+              <div className="space-y-1.5 sm:col-span-2">
+                <Label>Formulário</Label>
+                <Select
+                  value={form.assignedFormId || "__default__"}
+                  onValueChange={(v) => setForm({ ...form, assignedFormId: v === "__default__" ? "" : v })}
+                >
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__default__">Padrão do sistema</SelectItem>
+                    {activeForms.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  Formulário enviado a este paciente. Deixe em "Padrão do sistema" para usar o
+                  formulário definido em Configurações.
+                </p>
               </div>
             </div>
           </div>
