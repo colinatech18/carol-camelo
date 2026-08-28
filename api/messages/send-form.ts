@@ -90,12 +90,45 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(200).json({ sent: 0, skipped });
   }
 
+  // Decide, por paciente, se dá pra mandar texto livre (janela de 24h aberta
+  // desde a última mensagem RECEBIDA dele) ou se precisa de template aprovado
+  // pela Meta (fora da janela, ou nunca conversou antes). Calculado aqui, com
+  // dados que já temos em `messages` — não dá pra confiar na resposta síncrona
+  // da API de envio de texto livre pra isso: ela retorna sucesso na hora mesmo
+  // quando a mensagem será rejeitada depois, de forma assíncrona.
+  const readyIds = ready.map((r) => r.patientId);
+  const { data: lastInboundRows, error: inboundError } = await supabaseAdmin
+    .from("messages")
+    .select("patient_id, created_at")
+    .in("patient_id", readyIds)
+    .eq("direction", "inbound")
+    .order("created_at", { ascending: false });
+
+  if (inboundError) return internalError(res, "messages/send-form:inbound-lookup", inboundError);
+
+  const lastInboundByPatient = new Map<string, string>();
+  for (const row of lastInboundRows ?? []) {
+    // Já vem ordenado do mais recente pro mais antigo — só guarda a primeira
+    // ocorrência de cada paciente (a mais recente).
+    if (!lastInboundByPatient.has(row.patient_id)) {
+      lastInboundByPatient.set(row.patient_id, row.created_at);
+    }
+  }
+
+  const WINDOW_MS = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  const withChannel = ready.map((r) => {
+    const last = lastInboundByPatient.get(r.patientId);
+    const withinWindow = last ? now - new Date(last).getTime() < WINDOW_MS : false;
+    return { ...r, channel: withinWindow ? "text" : "template" };
+  });
+
   let n8nOk = false;
   try {
     const n8nRes = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Webhook-Secret": secret },
-      body: JSON.stringify({ patients: ready }),
+      body: JSON.stringify({ patients: withChannel }),
       signal: AbortSignal.timeout(N8N_CALL_TIMEOUT_MS),
     });
     n8nOk = n8nRes.ok;
