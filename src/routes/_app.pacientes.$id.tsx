@@ -17,6 +17,7 @@ import { useAuth } from "@/lib/auth-context";
 import { getAuthHeader } from "@/lib/authHeader";
 import { criticalityFromResponses, programDay, averageOfEntry } from "@/lib/criticality";
 import type { FormField } from "@/lib/forms-store";
+import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Legend } from "recharts";
