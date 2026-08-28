@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { internalError } from "../_lib/errorResponse";
-import { validateFormAnswers, type FormField } from "../_lib/formValidation";
+import { internalError } from "../_lib/errorResponse.js";
+import { validateFormAnswers, type FormField } from "../_lib/formValidation.js";
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL!,

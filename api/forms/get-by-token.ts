@@ -1,8 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 // Reaproveita a MESMA lógica de dia do programa usada em toda a app (não reescrever).
-import { programDay } from "../../src/lib/criticality";
-import { internalError } from "../_lib/errorResponse";
+import { programDay } from "../../src/lib/criticality.js";
+import { internalError } from "../_lib/errorResponse.js";
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL!,

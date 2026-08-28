@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { createHash, timingSafeEqual } from "node:crypto";
-import { internalError } from "../_lib/errorResponse";
+import { internalError } from "../_lib/errorResponse.js";
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL!,

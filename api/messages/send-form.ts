@@ -1,7 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
-import { requireUser } from "../_lib/requireAdmin";
-import { internalError } from "../_lib/errorResponse";
+import { requireUser } from "../_lib/requireAdmin.js";
+import { internalError } from "../_lib/errorResponse.js";
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL!,
@@ -28,6 +28,16 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(500).json({ error: "Integração de envio não configurada" });
   }
 
+  const { data: settings, error: settingsError } = await supabaseAdmin
+    .from("app_settings")
+    .select("reminder_message_template")
+    .eq("id", true)
+    .maybeSingle();
+  if (settingsError) return internalError(res, "messages/send-form:settings", settingsError);
+  const template =
+    settings?.reminder_message_template ||
+    "Olá {{name}}! Não se esqueça de preencher seu diário de hoje: {{link}}";
+
   const body = (req.body ?? {}) as { patientIds?: unknown };
   const patientIds = Array.isArray(body.patientIds)
     ? body.patientIds.filter((id): id is string => typeof id === "string")
@@ -49,7 +59,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const found = new Map((patients ?? []).map((p: any) => [p.id as string, p]));
 
-  const ready: Array<{ patientId: string; name: string; phone: string; link: string }> = [];
+  const ready: Array<{ patientId: string; name: string; phone: string; link: string; message: string }> = [];
   const skipped: Array<{ patientId: string; reason: SkipReason }> = [];
 
   for (const id of patientIds) {
@@ -70,12 +80,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       skipped.push({ patientId: id, reason: "no_token" });
       continue;
     }
-    ready.push({
-      patientId: p.id,
-      name: p.name,
-      phone: p.phone,
-      link: `${appUrl.replace(/\/$/, "")}/formulario/${p.public_token}`,
-    });
+    const firstName = String(p.name).trim().split(/\s+/)[0] ?? p.name;
+    const link = `${appUrl.replace(/\/$/, "")}/formulario/${p.public_token}`;
+    const message = template.replace(/\{\{\s*name\s*\}\}/g, firstName).replace(/\{\{\s*link\s*\}\}/g, link);
+    ready.push({ patientId: p.id, name: p.name, phone: p.phone, link, message });
   }
 
   if (ready.length === 0) {
