@@ -2,21 +2,16 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import type { SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Extrai o JWT do header Authorization, confirma que pertence a um usuário
- * autenticado de verdade (via supabaseAdmin.auth.getUser) e checa em `profiles`
- * que esse usuário tem role = 'admin'.
+ * Extrai e valida o JWT do header Authorization — confirma que o request vem
+ * de um usuário autenticado de verdade (via supabaseAdmin.auth.getUser), sem
+ * exigir nenhum role específico. Use isto quando qualquer staff logado pode
+ * fazer a ação; use `requireAdmin` quando só admin pode.
  *
- * Retorna o id do admin autenticado em caso de sucesso, ou `null` depois de já
- * ter escrito a resposta de erro (401/403) no `res` — nesse caso o handler que
- * chamou só precisa dar `return`.
- *
- * Importante: isso NÃO substitui RLS. RLS protege o dado quando o cliente usa a
- * anon/authenticated key. Essas rotas usam a service_role key (que bypassa RLS
- * de propósito, para poder administrar auth.users), então a checagem de
- * autorização TEM que viver aqui, no código — não existe rede de segurança do
- * banco para uma service_role key mal usada.
+ * Retorna o id do usuário autenticado, ou `null` depois de já ter escrito a
+ * resposta de erro (401) no `res` — nesse caso o handler que chamou só
+ * precisa dar `return`.
  */
-export async function requireAdmin(
+export async function requireUser(
   req: VercelRequest,
   res: VercelResponse,
   supabaseAdmin: SupabaseClient,
@@ -30,18 +25,32 @@ export async function requireAdmin(
     return null;
   }
 
-  // Confirma que o token é válido e pega o usuário dono dele.
   const { data: userData, error: userError } = await supabaseAdmin.auth.getUser(token);
   if (userError || !userData.user) {
     res.status(401).json({ error: "Token inválido ou expirado" });
     return null;
   }
 
-  const callerId = userData.user.id;
+  return userData.user.id;
+}
 
-  // Confirma que esse usuário é admin, consultando a fonte de verdade (profiles),
-  // não o user_metadata (que já vimos que pode ficar dessincronizado ou, em teoria,
-  // ser alvo de tentativa de manipulação por outra rota).
+/**
+ * Como `requireUser`, mas também exige que o usuário tenha role = 'admin' em
+ * `profiles`. Use nas rotas de gestão de usuário (create/update/delete) e em
+ * qualquer outra ação restrita a administradores.
+ *
+ * Importante: isso NÃO substitui RLS. RLS protege o dado quando o cliente usa a
+ * anon/authenticated key. Estas rotas usam a service_role key (que bypassa RLS
+ * de propósito), então a checagem de autorização TEM que viver aqui, no código.
+ */
+export async function requireAdmin(
+  req: VercelRequest,
+  res: VercelResponse,
+  supabaseAdmin: SupabaseClient,
+): Promise<string | null> {
+  const callerId = await requireUser(req, res, supabaseAdmin);
+  if (!callerId) return null; // requireUser já escreveu a resposta de erro (401)
+
   const { data: profile, error: profileError } = await supabaseAdmin
     .from("profiles")
     .select("role")

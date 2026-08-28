@@ -36,6 +36,7 @@ import { CriticalityBadge } from "@/components/CriticalityBadge";
 import { useEnrichedPatients } from "@/hooks/useEnrichedPatients";
 import { listForms } from "@/lib/forms-store";
 import { supabase } from "@/lib/supabase";
+import { getAuthHeader } from "@/lib/authHeader";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -369,6 +370,27 @@ function PatientsList() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao restaurar"),
   });
 
+  const bulkSend = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await fetch("/api/messages/send-form", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await getAuthHeader()) },
+        body: JSON.stringify({ patientIds: ids }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Erro ao acionar o envio");
+      return body as { sent: number; skipped: Array<{ patientId: string; reason: string }> };
+    },
+    onSuccess: (result) => {
+      setSelected(new Set());
+      if (result.sent > 0) toast.success(`Envio acionado para ${result.sent} paciente(s)`);
+      if (result.skipped.length > 0) {
+        toast.warning(`${result.skipped.length} paciente(s) pulado(s) (sem telefone, arquivado, etc.)`);
+      }
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar"),
+  });
+
   const allVisibleSelected = sorted.length > 0 && selected.size === sorted.length;
   const someVisibleSelected = selected.size > 0 && !allVisibleSelected;
 
@@ -476,8 +498,8 @@ function PatientsList() {
                 </AlertDialogContent>
               </AlertDialog>
 
-              <Button size="sm" variant="outline" disabled title="Depende da integração de envio (em breve)">
-                Enviar mensagem
+              <Button size="sm" variant="outline" disabled={bulkSend.isPending} onClick={() => bulkSend.mutate(selectedIds)}>
+                {bulkSend.isPending ? "Enviando…" : "Enviar mensagem"}
               </Button>
             </>
           )}

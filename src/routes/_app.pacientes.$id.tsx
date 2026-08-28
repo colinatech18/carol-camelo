@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Send, Copy, Check, FileText, Pencil } from "lucide-react";
+import { ArrowLeft, Send, Copy, Check, FileText, Pencil, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -14,7 +14,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { CriticalityBadge } from "@/components/CriticalityBadge";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
+import { getAuthHeader } from "@/lib/authHeader";
 import { criticalityFromResponses, programDay, averageOfEntry } from "@/lib/criticality";
+import type { FormField } from "@/lib/forms-store";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Legend } from "recharts";
@@ -24,6 +26,7 @@ import type { Patient, ResponseEntry } from "@/types";
 export const Route = createFileRoute("/_app/pacientes/$id")({ component: PatientDetail });
 
 const STATUS_LABEL = { active: "Ativo", completed: "Concluído", paused: "Pausado" } as const;
+const OTHER_SENTINEL = "__other__";
 
 type EditForm = {
   name: string;
@@ -33,6 +36,46 @@ type EditForm = {
   responsibleId: string;
   status: "active" | "paused" | "completed";
 };
+
+/** Traduz o valor bruto salvo (número, id de opção, etc.) para texto legível,
+ * usando a definição real do campo do formulário respondido. Sem a definição
+ * (campo não encontrado, formulário apagado), cai no valor bruto. */
+function formatAnswerValue(field: FormField | undefined, value: unknown): string {
+  if (!field) {
+    if (Array.isArray(value)) return value.join(", ");
+    return value === undefined || value === null ? "—" : String(value);
+  }
+  switch (field.type) {
+    case "emoji_scale": {
+      const idx = typeof value === "number" ? value - 1 : -1;
+      return field.options?.[idx]?.label ?? String(value);
+    }
+    case "radio":
+    case "dropdown": {
+      if (value === OTHER_SENTINEL) return "Outro";
+      return field.options?.find((o) => o.id === value)?.label ?? String(value);
+    }
+    case "checkbox": {
+      if (!Array.isArray(value)) return String(value);
+      return value
+        .map((v) => (v === OTHER_SENTINEL ? "Outro" : field.options?.find((o) => o.id === v)?.label ?? String(v)))
+        .join(", ");
+    }
+    case "date": {
+      try {
+        return format(parseISO(String(value)), "dd/MM/yyyy");
+      } catch {
+        return String(value);
+      }
+    }
+    case "money":
+      return `${field.currency ?? "BRL"} ${Number(value).toFixed(2)}`;
+    case "number":
+      return `${value}${field.unit ? ` ${field.unit}` : ""}`;
+    default:
+      return String(value);
+  }
+}
 
 function PatientDetail() {
   const { id } = Route.useParams();
@@ -53,6 +96,7 @@ function PatientDetail() {
         responsibleId: data.responsible_id ?? "",
         status: data.status ?? "active",
         publicToken: data.public_token ?? "",
+        assignedFormId: data.assigned_form_id ?? undefined,
       } as Patient;
     },
   });
@@ -67,11 +111,36 @@ function PatientDetail() {
         patientId: r.patient_id,
         date: r.submitted_at?.slice(0, 10) ?? "",
         programDay: programDay(patient?.startDate ?? ""),
-        answers: r.responses ?? [],
+        formId: r.form_id ?? undefined,
+        answers: (r.responses ?? []) as ResponseEntry["answers"],
         createdAt: r.submitted_at ?? "",
       })) as ResponseEntry[];
     },
     enabled: !!patient,
+  });
+
+  // Busca a definição (campos) de cada formulário referenciado pelas respostas,
+  // pra traduzir questionId -> label da pergunta e valor bruto -> texto legível
+  // na aba Histórico. Uma resposta sem form_id (não deveria acontecer após a
+  // migração, mas por segurança) cai no fallback de "valor bruto" acima.
+  const formIds = useMemo(
+    () => Array.from(new Set(responses.map((r) => r.formId).filter((v): v is string => !!v))),
+    [responses],
+  );
+  const { data: fieldsByFormId = new Map<string, Map<string, FormField>>() } = useQuery({
+    queryKey: ["forms", "fields-by-id", formIds],
+    queryFn: async () => {
+      const { data, error } = (await supabase.from("forms").select("id, fields").in("id", formIds)) as any;
+      if (error) throw error;
+      const map = new Map<string, Map<string, FormField>>();
+      (data ?? []).forEach((f: any) => {
+        const fieldMap = new Map<string, FormField>();
+        ((f.fields ?? []) as FormField[]).forEach((field) => fieldMap.set(field.id, field));
+        map.set(f.id, fieldMap);
+      });
+      return map;
+    },
+    enabled: formIds.length > 0,
   });
 
   const { data: appointments = [] } = useQuery({
@@ -108,6 +177,24 @@ function PatientDetail() {
   });
 
   const toggleActive = (checked: boolean) => updateStatus.mutate(checked ? "active" : "paused");
+
+  const sendReminder = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/messages/send-form", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await getAuthHeader()) },
+        body: JSON.stringify({ patientIds: [id] }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Erro ao acionar o envio");
+      return body as { sent: number; skipped: Array<{ patientId: string; reason: string }> };
+    },
+    onSuccess: (result) => {
+      if (result.sent > 0) toast.success("Envio acionado");
+      else toast.warning("Não foi possível enviar (paciente sem telefone cadastrado ou arquivado)");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar"),
+  });
 
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState<EditForm>({
@@ -223,8 +310,13 @@ function PatientDetail() {
             <Button variant="outline" onClick={copyLink}>
               {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />} Link do formulário
             </Button>
-            <Button onClick={() => toast.info("Lembrete será enviado via n8n")}>
-              <Send className="h-4 w-4 mr-2" /> Enviar lembrete
+            <Button onClick={() => sendReminder.mutate()} disabled={sendReminder.isPending}>
+              {sendReminder.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <Send className="h-4 w-4 mr-2" />
+              )}
+              Enviar lembrete
             </Button>
           </div>
         </CardContent>
@@ -266,19 +358,33 @@ function PatientDetail() {
             <CardHeader><CardTitle className="text-base">Respostas diárias</CardTitle></CardHeader>
             <CardContent className="space-y-4">
               {responses.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma resposta ainda.</p>}
-              {[...responses].sort((a, b) => b.programDay - a.programDay).map((r) => (
-                <div key={r.id} className="rounded-md border p-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <div className="text-sm font-medium">Dia {r.programDay} de 30</div>
-                    <div className="text-xs text-muted-foreground">
-                      {r.createdAt ? format(parseISO(r.createdAt), "dd MMM yyyy HH:mm", { locale: ptBR }) : "—"}
+              {[...responses].sort((a, b) => b.programDay - a.programDay).map((r) => {
+                const fieldsById = r.formId ? fieldsByFormId.get(r.formId) : undefined;
+                return (
+                  <div key={r.id} className="rounded-md border p-4 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="text-sm font-medium">Dia {r.programDay} de 30</div>
+                      <div className="text-xs text-muted-foreground">
+                        {r.createdAt ? format(parseISO(r.createdAt), "dd MMM yyyy HH:mm", { locale: ptBR }) : "—"}
+                      </div>
+                    </div>
+                    <div className="grid sm:grid-cols-2 gap-3">
+                      {r.answers.map((a, i) => {
+                        const field = fieldsById?.get(a.questionId);
+                        return (
+                          <div key={i} className="text-sm">
+                            <div className="text-xs text-muted-foreground">{field?.label ?? a.questionId}</div>
+                            <div className="font-medium">{formatAnswerValue(field, a.value)}</div>
+                            {a.note && (
+                              <div className="text-xs text-muted-foreground italic mt-0.5">&quot;{a.note}&quot;</div>
+                            )}
+                          </div>
+                        );
+                      })}
                     </div>
                   </div>
-                  <pre className="text-xs text-muted-foreground whitespace-pre-wrap">
-                    {JSON.stringify(r.answers, null, 2)}
-                  </pre>
-                </div>
-              ))}
+                );
+              })}
             </CardContent>
           </Card>
         </TabsContent>
