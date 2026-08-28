@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Send, Copy, Check, FileText, Pencil, Loader2 } from "lucide-react";
+import { ArrowLeft, Send, Copy, Check, FileText, Pencil, Loader2, MessageSquare } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -149,6 +149,25 @@ function PatientDetail() {
       const { data, error } = (await supabase.from("appointments").select("*").eq("patient_id", id)) as any;
       if (error) throw error;
       return data ?? [];
+    },
+  });
+
+  const { data: messages = [] } = useQuery({
+    queryKey: ["messages", id],
+    queryFn: async () => {
+      const { data, error } = (await supabase
+        .from("messages")
+        .select("*")
+        .eq("patient_id", id)
+        .order("created_at", { ascending: true })) as any;
+      if (error) throw error;
+      return (data ?? []) as Array<{
+        id: string;
+        direction: "inbound" | "outbound";
+        content: string;
+        content_type: string;
+        created_at: string;
+      }>;
     },
   });
 
@@ -326,6 +345,7 @@ function PatientDetail() {
         <TabsList>
           <TabsTrigger value="evolution">Evolução</TabsTrigger>
           <TabsTrigger value="history">Histórico</TabsTrigger>
+          <TabsTrigger value="conversas">Conversas</TabsTrigger>
           <TabsTrigger value="schedule">Agenda</TabsTrigger>
         </TabsList>
 
@@ -385,6 +405,48 @@ function PatientDetail() {
                   </div>
                 );
               })}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="conversas">
+          <Card>
+            <CardHeader><CardTitle className="text-base">Conversas via WhatsApp</CardTitle></CardHeader>
+            <CardContent>
+              {messages.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-10 text-center flex flex-col items-center gap-2">
+                  <MessageSquare className="h-8 w-8 text-muted-foreground/40" />
+                  Nenhuma mensagem trocada ainda.
+                </p>
+              ) : (
+                <div className="space-y-3 max-h-[32rem] overflow-y-auto pr-1">
+                  {messages.map((m) => {
+                    const isInbound = m.direction === "inbound";
+                    return (
+                      <div key={m.id} className={cn("flex", isInbound ? "justify-start" : "justify-end")}>
+                        <div
+                          className={cn(
+                            "max-w-[75%] rounded-2xl px-4 py-2.5 text-sm",
+                            isInbound
+                              ? "bg-muted text-foreground rounded-bl-sm"
+                              : "bg-primary text-primary-foreground rounded-br-sm",
+                          )}
+                        >
+                          <p className="whitespace-pre-wrap break-words">{m.content}</p>
+                          <p
+                            className={cn(
+                              "text-[10px] mt-1",
+                              isInbound ? "text-muted-foreground" : "text-primary-foreground/70",
+                            )}
+                          >
+                            {format(parseISO(m.created_at), "dd MMM yyyy HH:mm", { locale: ptBR })}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
             </CardContent>
           </Card>
         </TabsContent>
