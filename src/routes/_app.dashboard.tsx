@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { toast } from "sonner";
 import { AlertCircle, Activity, Users as UsersIcon, TrendingUp, MessageSquare, CalendarClock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -11,6 +11,7 @@ import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger }
 import { CriticalityBadge } from "@/components/CriticalityBadge";
 import { useEnrichedPatients } from "@/hooks/useEnrichedPatients";
 import { supabase } from "@/lib/supabase";
+import { getAuthHeader } from "@/lib/authHeader";
 import { averageOfEntry } from "@/lib/criticality";
 import { cn } from "@/lib/utils";
 import { format, startOfDay, endOfDay, parseISO } from "date-fns";
@@ -132,6 +133,25 @@ function DashboardPage() {
   const patientNameById = useMemo(() => new Map(patients.map((p) => [p.id, p.name])), [patients]);
   const userNameById = useMemo(() => new Map(users.map((u) => [u.id, u.name])), [users]);
 
+  const sendReminder = useMutation({
+    mutationFn: async (patientId: string) => {
+      const res = await fetch("/api/messages/send-form", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await getAuthHeader()) },
+        body: JSON.stringify({ patientIds: [patientId] }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Erro ao acionar o envio");
+      return body as { sent: number; skipped: Array<{ patientId: string; reason: string }> };
+    },
+    onSuccess: (result, patientId) => {
+      const name = patientNameById.get(patientId) ?? "paciente";
+      if (result.sent > 0) toast.success(`Lembrete enviado para ${name}`);
+      else toast.warning(`Não foi possível enviar (sem telefone cadastrado ou fora de alcance)`);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar lembrete"),
+  });
+
   return (
     <TooltipProvider delayDuration={200}>
     <div className="p-6 lg:p-8 space-y-6 max-w-7xl mx-auto">
@@ -213,10 +233,11 @@ function DashboardPage() {
                       <Button
                         size="sm"
                         variant="outline"
+                        disabled={sendReminder.isPending}
                         onClick={(e) => {
                           e.preventDefault();
                           e.stopPropagation();
-                          toast.success(`Lembrete enviado para ${p.name}`);
+                          sendReminder.mutate(p.id);
                         }}
                       >
                         <MessageSquare className="h-3.5 w-3.5" />
