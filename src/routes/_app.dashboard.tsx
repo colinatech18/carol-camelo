@@ -185,135 +185,135 @@ function DashboardPage() {
           </CardContent>
         </Card>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base">Sem resposta há 2+ dias</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {noResponseRecent.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Todos em dia 👍</p>
-              ) : (
-                // Mostra ~3 pacientes; acima disso rola dentro do cartão.
-                <div className="space-y-2 max-h-[21rem] overflow-y-auto pr-1">
-                  {noResponseRecent.map((p) => (
-                    <div key={p.id} className="rounded-md border p-3 hover:bg-muted/40 transition space-y-2.5">
-                      <div className="flex items-center gap-3">
-                        <div className={cn("h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold", avatarColor(p.name))}>
-                          {initials(p.name)}
-                        </div>
-                        <Link to="/pacientes/$id" params={{ id: p.id }} className="min-w-0 flex-1">
-                          <div className="text-sm font-medium truncate">{p.name}</div>
-                          <div className="text-xs text-muted-foreground truncate">
-                            Última resposta: {p.daysSinceLast ?? "—"} dias atrás
-                          </div>
-                        </Link>
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Sem resposta há 2+ dias</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {noResponseRecent.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Todos em dia 👍</p>
+            ) : (
+              // Mostra ~3 pacientes; acima disso rola dentro do cartão.
+              <div className="space-y-2 max-h-[21rem] overflow-y-auto pr-1">
+                {noResponseRecent.map((p) => (
+                  <div key={p.id} className="rounded-md border p-3 hover:bg-muted/40 transition space-y-2.5">
+                    <div className="flex items-center gap-3">
+                      <div className={cn("h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold", avatarColor(p.name))}>
+                        {initials(p.name)}
                       </div>
-                      <div className="flex items-center justify-between gap-2 pl-12">
-                        <CriticalityBadge level={p.criticality} />
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            toast.success(`Lembrete enviado para ${p.name}`);
-                          }}
-                        >
-                          <MessageSquare className="h-3.5 w-3.5" />
-                          Lembrete
-                        </Button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle className="text-base flex items-center gap-2">
-                <CalendarClock className="h-4 w-4 text-muted-foreground" />
-                Consultas de hoje
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingAppointments ? (
-                <p className="text-sm text-muted-foreground">Carregando…</p>
-              ) : todayAppointments.length === 0 ? (
-                <p className="text-sm text-muted-foreground">Nenhuma consulta agendada para hoje.</p>
-              ) : (
-                <div className="space-y-2 max-h-[21rem] overflow-y-auto pr-1">
-                  {todayAppointments.map((a) => {
-                    const patientName = patientNameById.get(a.patient_id) ?? "Paciente";
-                    const profName = a.professional_id ? userNameById.get(a.professional_id) : undefined;
-                    const status = a.status ?? "pending";
-                    return (
-                      <Link
-                        key={a.id}
-                        to="/pacientes/$id"
-                        params={{ id: a.patient_id }}
-                        className={cn(
-                          "flex items-center gap-3 rounded-md border p-3 hover:bg-muted/40 transition",
-                          status === "cancelled" && "opacity-60",
-                        )}
-                      >
-                        <div className="text-sm font-semibold tabular-nums w-12 shrink-0">
-                          {a.scheduled_at ? format(parseISO(a.scheduled_at), "HH:mm") : "—"}
+                      <Link to="/pacientes/$id" params={{ id: p.id }} className="min-w-0 flex-1">
+                        <div className="text-sm font-medium truncate">{p.name}</div>
+                        <div className="text-xs text-muted-foreground truncate">
+                          Última resposta: {p.daysSinceLast ?? "—"} dias atrás
                         </div>
-                        <div className="min-w-0 flex-1">
-                          <div className={cn("text-sm font-medium truncate", status === "cancelled" && "line-through")}>
-                            {patientName}
-                          </div>
-                          {profName && <div className="text-xs text-muted-foreground truncate">{profName}</div>}
-                        </div>
-                        <Badge variant="outline" className={cn("shrink-0 text-[10px]", APPT_STATUS_BADGE[status])}>
-                          {APPT_STATUS_LABEL[status] ?? status}
-                        </Badge>
                       </Link>
-                    );
-                  })}
-                </div>
-              )}
-            </CardContent>
-          </Card>
-        </div>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 pl-12">
+                      <CriticalityBadge level={p.criticality} />
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={(e) => {
+                          e.preventDefault();
+                          e.stopPropagation();
+                          toast.success(`Lembrete enviado para ${p.name}`);
+                        }}
+                      >
+                        <MessageSquare className="h-3.5 w-3.5" />
+                        Lembrete
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Pacientes ativos</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
-          <div className="divide-y">
-            {filtered.map((p) => {
-              const pct = Math.round((p.programDay / 30) * 100);
-              return (
-                <Link key={p.id} to="/pacientes/$id" params={{ id: p.id }} className="flex items-center gap-3 py-3 hover:bg-muted/30 -mx-2 px-2 rounded-md transition">
-                  <div className={cn("h-10 w-10 shrink-0 rounded-full flex items-center justify-center text-sm font-semibold", avatarColor(p.name))}>
-                    {initials(p.name)}
-                  </div>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm font-medium truncate">{p.name}</div>
-                    <div className="text-xs text-muted-foreground mb-1.5">Dia {p.programDay} de 30</div>
-                    <UITooltip>
-                      <TooltipTrigger asChild>
-                        <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
-                          <div className={cn("h-full rounded-full transition-all", CRIT_BAR[p.criticality])} style={{ width: `${pct}%` }} />
+      <div className="grid gap-6 lg:grid-cols-3">
+        <Card className="lg:col-span-2">
+          <CardHeader>
+            <CardTitle className="text-base">Pacientes ativos</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {isLoading && <p className="text-sm text-muted-foreground">Carregando…</p>}
+            <div className="divide-y">
+              {filtered.map((p) => {
+                const pct = Math.round((p.programDay / 30) * 100);
+                return (
+                  <Link key={p.id} to="/pacientes/$id" params={{ id: p.id }} className="flex items-center gap-3 py-3 hover:bg-muted/30 -mx-2 px-2 rounded-md transition">
+                    <div className={cn("h-10 w-10 shrink-0 rounded-full flex items-center justify-center text-sm font-semibold", avatarColor(p.name))}>
+                      {initials(p.name)}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">{p.name}</div>
+                      <div className="text-xs text-muted-foreground mb-1.5">Dia {p.programDay} de 30</div>
+                      <UITooltip>
+                        <TooltipTrigger asChild>
+                          <div className="h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                            <div className={cn("h-full rounded-full transition-all", CRIT_BAR[p.criticality])} style={{ width: `${pct}%` }} />
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent>Dia {p.programDay} de 30</TooltipContent>
+                      </UITooltip>
+                    </div>
+                    <CriticalityBadge level={p.criticality} />
+                  </Link>
+                );
+              })}
+            </div>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base flex items-center gap-2">
+              <CalendarClock className="h-4 w-4 text-muted-foreground" />
+              Consultas de hoje
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            {loadingAppointments ? (
+              <p className="text-sm text-muted-foreground">Carregando…</p>
+            ) : todayAppointments.length === 0 ? (
+              <p className="text-sm text-muted-foreground">Nenhuma consulta agendada para hoje.</p>
+            ) : (
+              <div className="space-y-2 max-h-[26rem] overflow-y-auto pr-1">
+                {todayAppointments.map((a) => {
+                  const patientName = patientNameById.get(a.patient_id) ?? "Paciente";
+                  const profName = a.professional_id ? userNameById.get(a.professional_id) : undefined;
+                  const status = a.status ?? "pending";
+                  return (
+                    <Link
+                      key={a.id}
+                      to="/pacientes/$id"
+                      params={{ id: a.patient_id }}
+                      className={cn(
+                        "flex items-center gap-3 rounded-md border p-3 hover:bg-muted/40 transition",
+                        status === "cancelled" && "opacity-60",
+                      )}
+                    >
+                      <div className="text-sm font-semibold tabular-nums w-12 shrink-0">
+                        {a.scheduled_at ? format(parseISO(a.scheduled_at), "HH:mm") : "—"}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <div className={cn("text-sm font-medium truncate", status === "cancelled" && "line-through")}>
+                          {patientName}
                         </div>
-                      </TooltipTrigger>
-                      <TooltipContent>Dia {p.programDay} de 30</TooltipContent>
-                    </UITooltip>
-                  </div>
-                  <CriticalityBadge level={p.criticality} />
-                </Link>
-              );
-            })}
-          </div>
-        </CardContent>
-      </Card>
+                        {profName && <div className="text-xs text-muted-foreground truncate">{profName}</div>}
+                      </div>
+                      <Badge variant="outline" className={cn("shrink-0 text-[10px]", APPT_STATUS_BADGE[status])}>
+                        {APPT_STATUS_LABEL[status] ?? status}
+                      </Badge>
+                    </Link>
+                  );
+                })}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
     </div>
     </TooltipProvider>
   );
