@@ -46,29 +46,43 @@
 
 :root {
   --radius: 0.75rem;
-  /* Calming clinical: soft off-white with teal/blue */
-  --background: oklch(0.99 0.005 220);
-  --foreground: oklch(0.22 0.04 240);
+
+  /* Paleta de marca Vera Psi:
+     #7E9C90 verde sálvia (primária) · #425462 azul-acinzentado escuro (secundária)
+     #E5D0CA pêssego · #C5B9AD bege · #DADADA cinza neutro · #141414 quase-preto
+     #F6F5F3 creme (destaque/fundo)
+     Cores de criticidade clínica (--success/--warning/--danger) e --destructive
+     são mantidas independentes da marca de propósito — são indicadores de
+     estado do paciente, não identidade visual. */
+  --background: oklch(0.970 0.003 84.6); /* #F6F5F3 */
+  --foreground: oklch(0.191 0 89.9); /* #141414 */
   --card: oklch(1 0 0);
-  --card-foreground: oklch(0.22 0.04 240);
+  --card-foreground: oklch(0.191 0 89.9); /* #141414 */
   --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.22 0.04 240);
-  /* Primary: deep calming teal-blue */
-  --primary: oklch(0.55 0.11 210);
-  --primary-foreground: oklch(0.99 0.005 220);
-  --secondary: oklch(0.95 0.02 200);
-  --secondary-foreground: oklch(0.3 0.05 220);
-  --muted: oklch(0.96 0.01 220);
-  --muted-foreground: oklch(0.5 0.03 230);
-  --accent: oklch(0.93 0.05 175);
-  --accent-foreground: oklch(0.28 0.07 200);
+  --popover-foreground: oklch(0.191 0 89.9); /* #141414 */
+
+  --primary: oklch(0.666 0.038 168.9); /* #7E9C90 */
+  /* Texto escuro sobre o verde sálvia: branco dá só 3:1 de contraste (reprova
+     WCAG AA para texto normal); preto dá 6.8:1. */
+  --primary-foreground: oklch(0.191 0 89.9); /* #141414 */
+
+  --secondary: oklch(0.873 0.025 36.5); /* #E5D0CA */
+  --secondary-foreground: oklch(0.436 0.032 241.9); /* #425462 */
+
+  --muted: oklch(0.792 0.022 67.5); /* #C5B9AD */
+  --muted-foreground: oklch(0.436 0.032 241.9); /* #425462 */
+
+  --accent: oklch(0.970 0.003 84.6); /* #F6F5F3 */
+  --accent-foreground: oklch(0.191 0 89.9); /* #141414 */
+
   --destructive: oklch(0.6 0.2 27);
   --destructive-foreground: oklch(0.99 0 0);
-  --border: oklch(0.9 0.015 220);
-  --input: oklch(0.9 0.015 220);
-  --ring: oklch(0.55 0.11 210);
 
-  /* Criticality */
+  --border: oklch(0.888 0 89.9); /* #DADADA */
+  --input: oklch(0.888 0 89.9); /* #DADADA */
+  --ring: oklch(0.666 0.038 168.9); /* #7E9C90 */
+
+  /* Criticidade — mantidas sem alteração, são indicadores clínicos */
   --success: oklch(0.7 0.14 160);
   --success-foreground: oklch(0.18 0.05 160);
   --warning: oklch(0.82 0.15 85);
@@ -76,36 +90,45 @@
   --danger: oklch(0.62 0.21 25);
   --danger-foreground: oklch(0.99 0 0);
 
-  --sidebar: oklch(0.97 0.015 215);
-  --sidebar-foreground: oklch(0.28 0.04 230);
-  --sidebar-primary: oklch(0.55 0.11 210);
-  --sidebar-primary-foreground: oklch(0.99 0.005 220);
-  --sidebar-accent: oklch(0.92 0.04 195);
-  --sidebar-accent-foreground: oklch(0.28 0.07 210);
-  --sidebar-border: oklch(0.88 0.02 215);
-  --sidebar-ring: oklch(0.55 0.11 210);
+  /* Sidebar escura de propósito (independente do modo claro/escuro do app) —
+     vira um elemento fixo de identidade visual da marca. */
+  --sidebar: oklch(0.436 0.032 241.9); /* #425462 */
+  --sidebar-foreground: oklch(0.970 0.003 84.6); /* #F6F5F3 */
+  --sidebar-primary: oklch(0.666 0.038 168.9); /* #7E9C90 */
+  --sidebar-primary-foreground: oklch(0.191 0 89.9); /* #141414 */
+  --sidebar-accent: oklch(1 0 0 / 10%);
+  --sidebar-accent-foreground: oklch(0.970 0.003 84.6); /* #F6F5F3 */
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.666 0.038 168.9); /* #7E9C90 */
 }
 
 .dark {
-  --background: oklch(0.18 0.025 240);
-  --foreground: oklch(0.96 0.01 220);
-  --card: oklch(0.22 0.03 240);
-  --card-foreground: oklch(0.96 0.01 220);
-  --popover: oklch(0.22 0.03 240);
-  --popover-foreground: oklch(0.96 0.01 220);
-  --primary: oklch(0.72 0.13 195);
-  --primary-foreground: oklch(0.18 0.03 240);
-  --secondary: oklch(0.28 0.03 235);
-  --secondary-foreground: oklch(0.96 0.01 220);
-  --muted: oklch(0.28 0.03 235);
-  --muted-foreground: oklch(0.7 0.02 220);
-  --accent: oklch(0.32 0.06 195);
-  --accent-foreground: oklch(0.96 0.01 220);
+  --background: oklch(0.191 0 89.9); /* #141414 */
+  --foreground: oklch(0.970 0.003 84.6); /* #F6F5F3 */
+  --card: oklch(0.26 0 89.9);
+  --card-foreground: oklch(0.970 0.003 84.6); /* #F6F5F3 */
+  --popover: oklch(0.26 0 89.9);
+  --popover-foreground: oklch(0.970 0.003 84.6); /* #F6F5F3 */
+
+  /* Sálvia levemente clareada pra se destacar melhor sobre o fundo quase-preto */
+  --primary: oklch(0.74 0.05 169);
+  --primary-foreground: oklch(0.191 0 89.9); /* #141414 */
+
+  --secondary: oklch(0.873 0.025 36.5); /* #E5D0CA */
+  --secondary-foreground: oklch(0.436 0.032 241.9); /* #425462 */
+
+  --muted: oklch(0.26 0 89.9);
+  --muted-foreground: oklch(0.888 0 89.9); /* #DADADA */
+
+  --accent: oklch(0.26 0 89.9);
+  --accent-foreground: oklch(0.970 0.003 84.6); /* #F6F5F3 */
+
   --destructive: oklch(0.62 0.21 25);
   --destructive-foreground: oklch(0.99 0 0);
+
   --border: oklch(1 0 0 / 12%);
   --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.72 0.13 195);
+  --ring: oklch(0.74 0.05 169);
 
   --success: oklch(0.72 0.15 160);
   --success-foreground: oklch(0.15 0.05 160);
@@ -114,14 +137,15 @@
   --danger: oklch(0.65 0.22 25);
   --danger-foreground: oklch(0.99 0 0);
 
-  --sidebar: oklch(0.2 0.03 240);
-  --sidebar-foreground: oklch(0.92 0.01 220);
-  --sidebar-primary: oklch(0.72 0.13 195);
-  --sidebar-primary-foreground: oklch(0.18 0.03 240);
-  --sidebar-accent: oklch(0.28 0.05 200);
-  --sidebar-accent-foreground: oklch(0.96 0.01 220);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.72 0.13 195);
+  /* Sidebar idêntica ao modo claro — elemento fixo de marca */
+  --sidebar: oklch(0.436 0.032 241.9); /* #425462 */
+  --sidebar-foreground: oklch(0.970 0.003 84.6); /* #F6F5F3 */
+  --sidebar-primary: oklch(0.666 0.038 168.9); /* #7E9C90 */
+  --sidebar-primary-foreground: oklch(0.191 0 89.9); /* #141414 */
+  --sidebar-accent: oklch(1 0 0 / 10%);
+  --sidebar-accent-foreground: oklch(0.970 0.003 84.6); /* #F6F5F3 */
+  --sidebar-border: oklch(1 0 0 / 12%);
+  --sidebar-ring: oklch(0.666 0.038 168.9); /* #7E9C90 */
 }
 
 @layer base {
@@ -144,4 +168,3 @@
 .high-contrast label, .high-contrast span, .high-contrast div {
   font-weight: 600;
 }
-

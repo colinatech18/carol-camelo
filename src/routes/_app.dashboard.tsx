@@ -2,16 +2,19 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { toast } from "sonner";
-import { AlertCircle, Activity, Users as UsersIcon, TrendingUp, MessageSquare } from "lucide-react";
+import { AlertCircle, Activity, Users as UsersIcon, TrendingUp, MessageSquare, CalendarClock } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Tooltip as UITooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { CriticalityBadge } from "@/components/CriticalityBadge";
 import { useEnrichedPatients } from "@/hooks/useEnrichedPatients";
-import { api } from "@/services/api";
+import { supabase } from "@/lib/supabase";
 import { averageOfEntry } from "@/lib/criticality";
 import { cn } from "@/lib/utils";
+import { format, startOfDay, endOfDay, parseISO } from "date-fns";
+import { ptBR } from "date-fns/locale";
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, ReferenceArea } from "recharts";
 
 export const Route = createFileRoute("/_app/dashboard")({ component: DashboardPage });
@@ -24,6 +27,17 @@ const AVATAR_PALETTE = [
   "bg-violet-500/20 text-violet-300",
   "bg-cyan-500/20 text-cyan-300",
 ];
+
+const APPT_STATUS_LABEL: Record<string, string> = {
+  pending: "Pendente",
+  done: "Realizado",
+  cancelled: "Cancelado",
+};
+const APPT_STATUS_BADGE: Record<string, string> = {
+  pending: "bg-muted text-muted-foreground border-border",
+  done: "bg-success/15 text-success-foreground border-success/30",
+  cancelled: "bg-danger/15 text-danger-foreground border-danger/30",
+};
 
 function initials(name: string) {
   const parts = name.trim().split(/\s+/);
@@ -47,7 +61,17 @@ const CRIT_BAR: Record<string, string> = {
 
 function DashboardPage() {
   const { data: patients = [], isLoading } = useEnrichedPatients();
-  const { data: users = [] } = useQuery({ queryKey: ["users"], queryFn: api.auth.listUsers });
+  // Antes usava api.auth.listUsers (camada mock antiga em localStorage — mostrava
+  // profissionais fictícios, não a equipe real). Consulta direta ao Supabase,
+  // mesmo padrão já usado em Pacientes/Configurações.
+  const { data: users = [] } = useQuery({
+    queryKey: ["users"],
+    queryFn: async () => {
+      const { data, error } = (await supabase.from("profiles").select("id, name")) as any;
+      if (error) throw error;
+      return data as Array<{ id: string; name: string }>;
+    },
+  });
   const [responsibleFilter, setResponsibleFilter] = useState<string>("all");
 
   const filtered = useMemo(
@@ -80,6 +104,33 @@ function DashboardPage() {
       .map(([d, arr]) => ({ day: Number(d), media: +(arr.reduce((s, v) => s + v, 0) / arr.length).toFixed(2) }))
       .sort((a, b) => a.day - b.day);
   }, [filtered]);
+
+  // Consultas e check-ins agendados para hoje, de qualquer paciente ativo.
+  const { data: todayAppointments = [], isLoading: loadingAppointments } = useQuery({
+    queryKey: ["appointments", "today"],
+    queryFn: async () => {
+      const start = startOfDay(new Date()).toISOString();
+      const end = endOfDay(new Date()).toISOString();
+      const { data, error } = (await supabase
+        .from("appointments")
+        .select("*")
+        .gte("scheduled_at", start)
+        .lt("scheduled_at", end)
+        .order("scheduled_at", { ascending: true })) as any;
+      if (error) throw error;
+      return (data ?? []) as Array<{
+        id: string;
+        patient_id: string;
+        professional_id: string | null;
+        scheduled_at: string | null;
+        status: string | null;
+        notes: string | null;
+      }>;
+    },
+  });
+
+  const patientNameById = useMemo(() => new Map(patients.map((p) => [p.id, p.name])), [patients]);
+  const userNameById = useMemo(() => new Map(users.map((u) => [u.id, u.name])), [users]);
 
   return (
     <TooltipProvider delayDuration={200}>
@@ -134,50 +185,100 @@ function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Sem resposta há 2+ dias</CardTitle>
-          </CardHeader>
-          <CardContent>
-            {noResponseRecent.length === 0 ? (
-              <p className="text-sm text-muted-foreground">Todos em dia 👏</p>
-            ) : (
-              // Mostra ~3 pacientes; acima disso rola dentro do cartão.
-              <div className="space-y-2 max-h-[21rem] overflow-y-auto pr-1">
-                {noResponseRecent.map((p) => (
-                  <div key={p.id} className="rounded-md border p-3 hover:bg-muted/40 transition space-y-2.5">
-                    <div className="flex items-center gap-3">
-                      <div className={cn("h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold", avatarColor(p.name))}>
-                        {initials(p.name)}
-                      </div>
-                      <Link to="/pacientes/$id" params={{ id: p.id }} className="min-w-0 flex-1">
-                        <div className="text-sm font-medium truncate">{p.name}</div>
-                        <div className="text-xs text-muted-foreground truncate">
-                          Última resposta: {p.daysSinceLast ?? "—"} dias atrás
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Sem resposta há 2+ dias</CardTitle>
+            </CardHeader>
+            <CardContent>
+              {noResponseRecent.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Todos em dia 👍</p>
+              ) : (
+                // Mostra ~3 pacientes; acima disso rola dentro do cartão.
+                <div className="space-y-2 max-h-[21rem] overflow-y-auto pr-1">
+                  {noResponseRecent.map((p) => (
+                    <div key={p.id} className="rounded-md border p-3 hover:bg-muted/40 transition space-y-2.5">
+                      <div className="flex items-center gap-3">
+                        <div className={cn("h-9 w-9 shrink-0 rounded-full flex items-center justify-center text-xs font-semibold", avatarColor(p.name))}>
+                          {initials(p.name)}
                         </div>
-                      </Link>
+                        <Link to="/pacientes/$id" params={{ id: p.id }} className="min-w-0 flex-1">
+                          <div className="text-sm font-medium truncate">{p.name}</div>
+                          <div className="text-xs text-muted-foreground truncate">
+                            Última resposta: {p.daysSinceLast ?? "—"} dias atrás
+                          </div>
+                        </Link>
+                      </div>
+                      <div className="flex items-center justify-between gap-2 pl-12">
+                        <CriticalityBadge level={p.criticality} />
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
+                            toast.success(`Lembrete enviado para ${p.name}`);
+                          }}
+                        >
+                          <MessageSquare className="h-3.5 w-3.5" />
+                          Lembrete
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between gap-2 pl-12">
-                      <CriticalityBadge level={p.criticality} />
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        onClick={(e) => {
-                          e.preventDefault();
-                          e.stopPropagation();
-                          toast.success(`Lembrete enviado para ${p.name}`);
-                        }}
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <CalendarClock className="h-4 w-4 text-muted-foreground" />
+                Consultas de hoje
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {loadingAppointments ? (
+                <p className="text-sm text-muted-foreground">Carregando…</p>
+              ) : todayAppointments.length === 0 ? (
+                <p className="text-sm text-muted-foreground">Nenhuma consulta agendada para hoje.</p>
+              ) : (
+                <div className="space-y-2 max-h-[21rem] overflow-y-auto pr-1">
+                  {todayAppointments.map((a) => {
+                    const patientName = patientNameById.get(a.patient_id) ?? "Paciente";
+                    const profName = a.professional_id ? userNameById.get(a.professional_id) : undefined;
+                    const status = a.status ?? "pending";
+                    return (
+                      <Link
+                        key={a.id}
+                        to="/pacientes/$id"
+                        params={{ id: a.patient_id }}
+                        className={cn(
+                          "flex items-center gap-3 rounded-md border p-3 hover:bg-muted/40 transition",
+                          status === "cancelled" && "opacity-60",
+                        )}
                       >
-                        <MessageSquare className="h-3.5 w-3.5" />
-                        Lembrete
-                      </Button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
+                        <div className="text-sm font-semibold tabular-nums w-12 shrink-0">
+                          {a.scheduled_at ? format(parseISO(a.scheduled_at), "HH:mm") : "—"}
+                        </div>
+                        <div className="min-w-0 flex-1">
+                          <div className={cn("text-sm font-medium truncate", status === "cancelled" && "line-through")}>
+                            {patientName}
+                          </div>
+                          {profName && <div className="text-xs text-muted-foreground truncate">{profName}</div>}
+                        </div>
+                        <Badge variant="outline" className={cn("shrink-0 text-[10px]", APPT_STATUS_BADGE[status])}>
+                          {APPT_STATUS_LABEL[status] ?? status}
+                        </Badge>
+                      </Link>
+                    );
+                  })}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       <Card>
@@ -221,13 +322,13 @@ function DashboardPage() {
 function MetricCard({ icon: Icon, label, value, hint, tone = "default" }: { icon: React.ComponentType<{ className?: string }>; label: string; value: React.ReactNode; hint?: string; tone?: "default" | "danger" }) {
   const isDanger = tone === "danger";
   return (
-    <Card className={cn(isDanger && "border-red-500/40 bg-red-500/5")}>
+    <Card className={cn(isDanger && "border-danger/40 bg-danger/5")}>
       <CardContent className="p-5">
         <div className="flex items-center justify-between">
           <span className="text-xs uppercase tracking-wide text-muted-foreground">{label}</span>
-          <Icon className={isDanger ? "h-4 w-4 text-red-400" : "h-4 w-4 text-primary"} />
+          <Icon className={isDanger ? "h-4 w-4 text-danger" : "h-4 w-4 text-primary"} />
         </div>
-        <div className={cn("mt-2 text-2xl font-semibold", isDanger && "text-red-400")}>{value}</div>
+        <div className={cn("mt-2 text-2xl font-semibold", isDanger && "text-danger")}>{value}</div>
         {hint && <div className="text-xs text-muted-foreground mt-1">{hint}</div>}
       </CardContent>
     </Card>
