@@ -184,11 +184,11 @@ function PatientDetail() {
         created_at: string;
       }>;
     },
-    // Busca de novo a cada 5s enquanto a aba estiver visível — sem isso, uma
+    // Busca de novo a cada 1s enquanto a aba estiver visível — sem isso, uma
     // mensagem nova só aparecia dando refresh na página manualmente. Não busca
     // em background (aba minimizada/outra aba do navegador ativa), pra não
     // gastar requisição à toa.
-    refetchInterval: 5000,
+    refetchInterval: 1000,
     refetchIntervalInBackground: false,
   });
 
