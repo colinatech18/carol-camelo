@@ -184,11 +184,11 @@ function PatientDetail() {
         created_at: string;
       }>;
     },
-    // Busca de novo a cada 1s enquanto a aba estiver visível — sem isso, uma
+    // Busca de novo a cada 2s enquanto a aba estiver visível — sem isso, uma
     // mensagem nova só aparecia dando refresh na página manualmente. Não busca
     // em background (aba minimizada/outra aba do navegador ativa), pra não
     // gastar requisição à toa.
-    refetchInterval: 1000,
+    refetchInterval: 2000,
     refetchIntervalInBackground: false,
   });
 
@@ -238,24 +238,43 @@ function PatientDetail() {
 
   const [draft, setDraft] = useState("");
   const sendManual = useMutation({
-    mutationFn: async () => {
+    mutationFn: async (message: string) => {
       const res = await fetch("/api/messages/send-manual", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await getAuthHeader()) },
-        body: JSON.stringify({ patientId: id, message: draft.trim() }),
+        body: JSON.stringify({ patientId: id, message }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "Erro ao enviar");
       return body as { ok: true };
     },
-    onSuccess: () => {
+    // Atualização otimista: mostra a mensagem na tela na hora (com "Enviando…"
+    // no lugar do horário), antes mesmo da confirmação do WhatsApp chegar —
+    // sem isso, a mensagem só aparecia depois do ciclo completo (n8n → Chakra
+    // → Meta) e da próxima checagem automática (2s).
+    onMutate: async (message: string) => {
+      await qc.cancelQueries({ queryKey: ["messages", id] });
+      const previous = qc.getQueryData<typeof messages>(["messages", id]);
+      const optimisticId = `optimistic-${Date.now()}`;
+      qc.setQueryData(["messages", id], (old: any[] = []) => [
+        ...old,
+        {
+          id: optimisticId,
+          direction: "outbound" as const,
+          content: message,
+          content_type: "text",
+          created_at: new Date().toISOString(),
+          _pending: true,
+        },
+      ]);
       setDraft("");
-      toast.success("Mensagem enviada");
-      // O registro em `messages` só aparece depois que o n8n confirmar o envio
-      // de volta (assíncrono) — não invalida a query aqui pra não mostrar uma
-      // lista "vazia" por um instante antes do webhook de confirmação chegar.
+      return { previous, message };
     },
-    onError: (e) => {
+    onError: (e, _message, context) => {
+      // Desfaz a mensagem otimista e devolve o texto pra caixa, sem perder o
+      // que a pessoa escreveu.
+      if (context?.previous) qc.setQueryData(["messages", id], context.previous);
+      setDraft(context?.message ?? "");
       const code = e instanceof Error ? e.message : "";
       if (code === "outside_24h_window") {
         toast.error(
@@ -268,6 +287,11 @@ function PatientDetail() {
       } else {
         toast.error(code || "Erro ao enviar mensagem");
       }
+    },
+    onSuccess: () => {
+      toast.success("Mensagem enviada");
+      // A checagem automática (2s) troca o item otimista pelo registro real
+      // assim que o n8n confirmar o envio de volta.
     },
   });
 
@@ -531,7 +555,7 @@ function PatientDetail() {
                 </p>
               ) : (
                 <div className="space-y-3 max-h-[32rem] overflow-y-auto pr-1">
-                  {messages.map((m) => {
+                  {messages.map((m: any) => {
                     const isInbound = m.direction === "inbound";
                     return (
                       <div key={m.id} className={cn("flex", isInbound ? "justify-start" : "justify-end")}>
@@ -541,6 +565,7 @@ function PatientDetail() {
                             isInbound
                               ? "bg-muted text-foreground rounded-bl-sm"
                               : "bg-primary text-primary-foreground rounded-br-sm",
+                            m._pending && "opacity-60",
                           )}
                         >
                           <p className="whitespace-pre-wrap break-words">{m.content}</p>
@@ -550,7 +575,9 @@ function PatientDetail() {
                               isInbound ? "text-muted-foreground" : "text-primary-foreground/70",
                             )}
                           >
-                            {format(parseISO(m.created_at), "dd MMM yyyy HH:mm", { locale: ptBR })}
+                            {m._pending
+                              ? "Enviando…"
+                              : format(parseISO(m.created_at), "dd MMM yyyy HH:mm", { locale: ptBR })}
                           </p>
                         </div>
                       </div>
@@ -568,7 +595,7 @@ function PatientDetail() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
-                      if (draft.trim() && !sendManual.isPending) sendManual.mutate();
+                      if (draft.trim()) sendManual.mutate(draft.trim());
                     }
                   }}
                   className="resize-none"
@@ -576,14 +603,10 @@ function PatientDetail() {
                 <Button
                   size="icon"
                   className="shrink-0 self-end"
-                  disabled={!draft.trim() || sendManual.isPending}
-                  onClick={() => sendManual.mutate()}
+                  disabled={!draft.trim()}
+                  onClick={() => sendManual.mutate(draft.trim())}
                 >
-                  {sendManual.isPending ? (
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                  ) : (
-                    <Send className="h-4 w-4" />
-                  )}
+                  <Send className="h-4 w-4" />
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
