@@ -230,6 +230,41 @@ function PatientDetail() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar"),
   });
 
+  const [draft, setDraft] = useState("");
+  const sendManual = useMutation({
+    mutationFn: async () => {
+      const res = await fetch("/api/messages/send-manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await getAuthHeader()) },
+        body: JSON.stringify({ patientId: id, message: draft.trim() }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Erro ao enviar");
+      return body as { ok: true };
+    },
+    onSuccess: () => {
+      setDraft("");
+      toast.success("Mensagem enviada");
+      // O registro em `messages` só aparece depois que o n8n confirmar o envio
+      // de volta (assíncrono) — não invalida a query aqui pra não mostrar uma
+      // lista "vazia" por um instante antes do webhook de confirmação chegar.
+    },
+    onError: (e) => {
+      const code = e instanceof Error ? e.message : "";
+      if (code === "outside_24h_window") {
+        toast.error(
+          "Fora da janela de 24h: o paciente precisa mandar uma mensagem antes de você poder responder livremente.",
+        );
+      } else if (code === "no_phone") {
+        toast.error("Este paciente não tem telefone cadastrado.");
+      } else if (code === "patient_archived") {
+        toast.error("Paciente arquivado — restaure antes de enviar mensagens.");
+      } else {
+        toast.error(code || "Erro ao enviar mensagem");
+      }
+    },
+  });
+
   const [editOpen, setEditOpen] = useState(false);
   const [form, setForm] = useState<EditForm>({
     name: "",
@@ -482,7 +517,7 @@ function PatientDetail() {
         <TabsContent value="conversas">
           <Card>
             <CardHeader><CardTitle className="text-base">Conversas via WhatsApp</CardTitle></CardHeader>
-            <CardContent>
+            <CardContent className="space-y-4">
               {messages.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-10 text-center flex flex-col items-center gap-2">
                   <MessageSquare className="h-8 w-8 text-muted-foreground/40" />
@@ -517,6 +552,38 @@ function PatientDetail() {
                   })}
                 </div>
               )}
+
+              <div className="flex gap-2 border-t pt-4">
+                <Textarea
+                  rows={2}
+                  placeholder="Escreva uma mensagem…"
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && !e.shiftKey) {
+                      e.preventDefault();
+                      if (draft.trim() && !sendManual.isPending) sendManual.mutate();
+                    }
+                  }}
+                  className="resize-none"
+                />
+                <Button
+                  size="icon"
+                  className="shrink-0 self-end"
+                  disabled={!draft.trim() || sendManual.isPending}
+                  onClick={() => sendManual.mutate()}
+                >
+                  {sendManual.isPending ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                </Button>
+              </div>
+              <p className="text-xs text-muted-foreground">
+                Só funciona se o paciente mandou mensagem nas últimas 24h (regra do WhatsApp). Enter
+                envia, Shift+Enter quebra linha.
+              </p>
             </CardContent>
           </Card>
         </TabsContent>

@@ -38,10 +38,6 @@ export async function requireUser(
  * Como `requireUser`, mas também exige que o usuário tenha role = 'admin' em
  * `profiles`. Use nas rotas de gestão de usuário (create/update/delete) e em
  * qualquer outra ação restrita a administradores.
- *
- * Importante: isso NÃO substitui RLS. RLS protege o dado quando o cliente usa a
- * anon/authenticated key. Estas rotas usam a service_role key (que bypassa RLS
- * de propósito), então a checagem de autorização TEM que viver aqui, no código.
  */
 export async function requireAdmin(
   req: VercelRequest,
@@ -49,7 +45,7 @@ export async function requireAdmin(
   supabaseAdmin: SupabaseClient,
 ): Promise<string | null> {
   const callerId = await requireUser(req, res, supabaseAdmin);
-  if (!callerId) return null; // requireUser já escreveu a resposta de erro (401)
+  if (!callerId) return null;
 
   const { data: profile, error: profileError } = await supabaseAdmin
     .from("profiles")
