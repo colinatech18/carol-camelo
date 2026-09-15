@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { ArrowLeft, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -107,6 +107,20 @@ function PatientRecord() {
 
   const authorName = (aid: string) =>
     profiles.find((p) => p.id === aid)?.name ?? "Autor desconhecido";
+
+  // Registra automaticamente que este usuário visualizou o prontuário deste
+  // paciente — log de auditoria (LGPD), separado de quem ESCREVE anotações.
+  // Fica só no banco (tabela prontuario_access_log); não é exibido na tela
+  // pra não poluir a visualização do dia a dia.
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from("prontuario_access_log")
+      .insert({ patient_id: id, viewed_by: user.id })
+      .then(({ error }) => {
+        if (error) console.error("Erro ao registrar acesso ao prontuário", error);
+      });
+  }, [id, user?.id]);
 
   const [noteType, setNoteType] = useState<NoteType>("psicologica");
   const [content, setContent] = useState("");
