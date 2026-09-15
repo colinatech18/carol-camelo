@@ -12,9 +12,10 @@ import {
   KeyRound,
   Loader2,
   ImageIcon,
+  Plus,
   X,
 } from "lucide-react";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -31,7 +32,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogFooter,
-  DialogTrigger,
 } from "@/components/ui/dialog";
 import {
   Select,
@@ -78,7 +78,6 @@ const ROLE_LABEL: Record<Role, string> = {
   psicologo: "Psicólogo",
   psiquiatra: "Psiquiatra",
   recepcionista: "Recepcionista",
-  // Aliases em inglês (dados do mock) mapeados para os mesmos rótulos.
   psychologist: "Psicólogo",
   psychiatrist: "Psiquiatra",
 };
@@ -91,28 +90,6 @@ const ROLE_BADGE: Record<string, string> = {
   psychiatrist: "bg-violet-500/15 text-violet-400 border-violet-500/30",
   recepcionista: "bg-muted text-muted-foreground border-border",
 };
-
-const LS = {
-  defaultForm: "mh.settings.defaultForm",
-  notifications: "mh.settings.notifications",
-  profile: "mh.settings.profile",
-  preferences: "mh.settings.preferences",
-  theme: "mh.theme",
-};
-
-function readLS<T>(key: string, fallback: T): T {
-  if (typeof window === "undefined") return fallback;
-  try {
-    const raw = localStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-function writeLS<T>(key: string, value: T) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(key, JSON.stringify(value));
-}
 
 function SettingsPage() {
   const { user } = useAuth();
@@ -135,13 +112,13 @@ function SettingsPage() {
             <BrandingCard />
             <TeamCard />
             <DefaultFormCard />
-            <NotificationsCard />
           </TabsContent>
         )}
 
         {user?.role === "admin" && (
           <TabsContent value="integracoes" className="space-y-6">
             <ReminderTemplateCard />
+            <WhatsappTemplatesCard />
           </TabsContent>
         )}
 
@@ -276,13 +253,6 @@ function colorFromName(name: string): string {
   return `hsl(${hue} 55% 45%)`;
 }
 
-type Preferences = { darkMode: boolean; emailNotifications: boolean; language: string };
-
-function applyTheme(dark: boolean) {
-  if (typeof document === "undefined") return;
-  document.documentElement.classList.toggle("dark", dark);
-}
-
 function ProfileTab() {
   const { user } = useAuth();
   const fileRef = useRef<HTMLInputElement | null>(null);
@@ -324,7 +294,6 @@ function ProfileTab() {
 
   return (
     <div className="space-y-8">
-      {/* PERFIL */}
       <section className="grid lg:grid-cols-10 gap-6">
         <div className="lg:col-span-3">
           <h3 className="text-base font-semibold">Perfil</h3>
@@ -443,9 +412,6 @@ function TeamCard() {
     },
   });
 
-  // As três mutations abaixo chamam api/create-user.ts, api/update-user.ts e
-  // api/delete-user.ts, que agora exigem o header Authorization com o token da
-  // sessão atual (ver api/_lib/requireAdmin.ts) — sem isso, todas retornam 401.
   const createUser = useMutation({
     mutationFn: async () => {
       const res = await fetch("/api/create-user", {
@@ -637,7 +603,6 @@ function TeamCard() {
         </CardContent>
       </Card>
 
-      {/* Adicionar membro */}
       <Dialog open={addOpen} onOpenChange={setAddOpen}>
         <DialogContent>
           <DialogHeader>
@@ -697,7 +662,6 @@ function TeamCard() {
         </DialogContent>
       </Dialog>
 
-      {/* Editar membro */}
       <Dialog open={!!editing} onOpenChange={(o) => !o && setEditing(null)}>
         <DialogContent>
           <DialogHeader>
@@ -728,11 +692,6 @@ function TeamCard() {
                 </SelectContent>
               </Select>
             </div>
-            {editing?.id === me?.id && me?.role === "admin" && editForm.role !== "admin" && (
-              <p className="text-xs text-amber-500">
-                Atenção: você está removendo seu próprio acesso de administrador.
-              </p>
-            )}
           </div>
           <DialogFooter>
             <Button variant="ghost" onClick={() => setEditing(null)}>
@@ -831,59 +790,7 @@ function DefaultFormCard() {
   );
 }
 
-/* ============================ NOTIFICAÇÕES ============================ */
-
-type NotificationPrefs = { inactivity2d: boolean; redStatus: boolean };
-
-function NotificationsCard() {
-  const [prefs, setPrefs] = useState<NotificationPrefs>(() =>
-    readLS<NotificationPrefs>(LS.notifications, { inactivity2d: true, redStatus: true }),
-  );
-  useEffect(() => {
-    writeLS(LS.notifications, prefs);
-  }, [prefs]);
-
-  return (
-    <SectionRow title="Notificações" description="Alertas automáticos por e-mail para a equipe.">
-      <Card>
-        <CardContent className="p-6 space-y-4">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-sm font-medium">Inatividade do paciente</div>
-              <p className="text-xs text-muted-foreground">
-                Notifica a equipe quando um paciente não responde há 2 dias ou mais.
-              </p>
-            </div>
-            <Switch
-              checked={prefs.inactivity2d}
-              onCheckedChange={(v) => setPrefs({ ...prefs, inactivity2d: v })}
-            />
-          </div>
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <div className="text-sm font-medium">Status crítico (vermelho)</div>
-              <p className="text-xs text-muted-foreground">
-                Notifica quando um paciente entra em status vermelho.
-              </p>
-            </div>
-            <Switch
-              checked={prefs.redStatus}
-              onCheckedChange={(v) => setPrefs({ ...prefs, redStatus: v })}
-            />
-          </div>
-        </CardContent>
-      </Card>
-    </SectionRow>
-  );
-}
-
 /* ============================== LEMBRETE (n8n) ============================== */
-/*
- * O envio em si é feito pelo n8n (que fala com o Chakra HQ / WhatsApp) — este
- * app não guarda credencial nenhuma de WhatsApp. Só o TEXTO do template fica
- * aqui, editável pela equipe, e é renderizado (com {{name}}/{{link}}
- * substituídos) por api/messages/send-form.ts antes de acionar o n8n.
- */
 
 function ReminderTemplateCard() {
   const qc = useQueryClient();
@@ -922,8 +829,8 @@ function ReminderTemplateCard() {
 
   return (
     <SectionRow
-      title="Mensagem de lembrete"
-      description="Texto enviado aos pacientes ao disparar o formulário (via n8n)."
+      title="Mensagem de lembrete (texto livre)"
+      description="Texto enviado quando o paciente está dentro da janela de 24h. Deixe igual ao template aprovado na Meta, pra manter consistência."
     >
       <Card>
         <CardContent className="p-6 space-y-3">
@@ -944,20 +851,328 @@ function ReminderTemplateCard() {
   );
 }
 
-/* ============================== APARÊNCIA ============================== */
+/* ==================== TEMPLATES DE WHATSAPP (MODELOS DA META) ==================== */
 
-const PRESET_COLORS: Array<{ name: string; hex: string }> = [
-  { name: "Cinza", hex: "#6b7280" },
-  { name: "Violeta", hex: "#7c3aed" },
-  { name: "Azul", hex: "#2563eb" },
-  { name: "Rosa", hex: "#ec4899" },
-  { name: "Roxo", hex: "#9333ea" },
-  { name: "Índigo", hex: "#4f46e5" },
-  { name: "Laranja", hex: "#f97316" },
-  { name: "Ciano", hex: "#0891b2" },
-  { name: "Areia", hex: "#a8855a" },
-  { name: "Verde", hex: "#10b981" },
-];
+type TemplateSource = "patient_first_name" | "patient_full_name" | "form_link";
+
+interface TemplateParam {
+  parameter_name: string;
+  source: TemplateSource;
+}
+
+interface WhatsappTemplateRow {
+  id: string;
+  name: string;
+  language: string;
+  parameters: TemplateParam[];
+}
+
+const SOURCE_LABEL: Record<TemplateSource, string> = {
+  patient_first_name: "Primeiro nome do paciente",
+  patient_full_name: "Nome completo do paciente",
+  form_link: "Link do formulário",
+};
+
+const EMPTY_TEMPLATE_FORM = {
+  name: "",
+  language: "pt_BR",
+  parameters: [{ parameter_name: "", source: "patient_first_name" as TemplateSource }],
+};
+
+function WhatsappTemplatesCard() {
+  const qc = useQueryClient();
+
+  const { data: templates = [], isLoading } = useQuery({
+    queryKey: ["whatsapp-templates"],
+    queryFn: async () => {
+      const { data, error } = (await supabase
+        .from("whatsapp_templates")
+        .select("*")
+        .order("created_at")) as any;
+      if (error) throw error;
+      return data as WhatsappTemplateRow[];
+    },
+  });
+
+  const { data: usage } = useQuery({
+    queryKey: ["app-settings-templates"],
+    queryFn: async () => {
+      const { data, error } = (await supabase
+        .from("app_settings")
+        .select("reminder_template_id, reopen_template_id")
+        .eq("id", true)
+        .maybeSingle()) as any;
+      if (error) throw error;
+      return data as { reminder_template_id: string | null; reopen_template_id: string | null };
+    },
+  });
+
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState<{ name: string; language: string; parameters: TemplateParam[] }>(
+    EMPTY_TEMPLATE_FORM,
+  );
+
+  function openCreate() {
+    setEditingId(null);
+    setForm(EMPTY_TEMPLATE_FORM);
+    setDialogOpen(true);
+  }
+  function openEdit(t: WhatsappTemplateRow) {
+    setEditingId(t.id);
+    setForm({
+      name: t.name,
+      language: t.language,
+      parameters: t.parameters.length ? t.parameters : EMPTY_TEMPLATE_FORM.parameters,
+    });
+    setDialogOpen(true);
+  }
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const name = form.name.trim();
+      if (!name) throw new Error("Nome do template é obrigatório");
+      const parameters = form.parameters.filter((p) => p.parameter_name.trim());
+      const payload = { name, language: form.language.trim() || "pt_BR", parameters };
+      if (editingId) {
+        const { error } = await supabase
+          .from("whatsapp_templates")
+          .update({ ...payload, updated_at: new Date().toISOString() })
+          .eq("id", editingId);
+        if (error) throw error;
+      } else {
+        const { error } = await supabase.from("whatsapp_templates").insert(payload);
+        if (error) throw error;
+      }
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["whatsapp-templates"] });
+      setDialogOpen(false);
+      toast.success(editingId ? "Template atualizado" : "Template criado");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar template"),
+  });
+
+  const remove = useMutation({
+    mutationFn: async (id: string) => {
+      const { error } = await supabase.from("whatsapp_templates").delete().eq("id", id);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["whatsapp-templates"] });
+      toast.success("Template excluído");
+    },
+    onError: () =>
+      toast.error("Erro ao excluir — confirme que ele não está selecionado como padrão abaixo"),
+  });
+
+  const setUsage = useMutation({
+    mutationFn: async (vars: { field: "reminder_template_id" | "reopen_template_id"; templateId: string }) => {
+      const { error } = await supabase
+        .from("app_settings")
+        .update({ [vars.field]: vars.templateId })
+        .eq("id", true);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["app-settings-templates"] });
+      toast.success("Atualizado");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar"),
+  });
+
+  function updateParam(idx: number, patch: Partial<TemplateParam>) {
+    setForm((f) => ({
+      ...f,
+      parameters: f.parameters.map((p, i) => (i === idx ? { ...p, ...patch } : p)),
+    }));
+  }
+  function addParam() {
+    setForm((f) => ({
+      ...f,
+      parameters: [...f.parameters, { parameter_name: "", source: "patient_first_name" }],
+    }));
+  }
+  function removeParam(idx: number) {
+    setForm((f) => ({ ...f, parameters: f.parameters.filter((_, i) => i !== idx) }));
+  }
+
+  return (
+    <SectionRow
+      title="Templates de WhatsApp (modelos da Meta)"
+      description="Cadastre aqui os templates aprovados na Meta Business Manager. Usados quando o paciente está fora da janela de 24h."
+    >
+      <div className="space-y-4">
+        <Card>
+          <CardContent className="p-6 space-y-3">
+            <div className="flex justify-end">
+              <Button size="sm" onClick={openCreate}>
+                <Plus className="h-4 w-4 mr-2" /> Novo template
+              </Button>
+            </div>
+            {isLoading ? (
+              <p className="text-sm text-muted-foreground">Carregando…</p>
+            ) : templates.length === 0 ? (
+              <p className="text-sm text-muted-foreground text-center py-6">
+                Nenhum template cadastrado ainda.
+              </p>
+            ) : (
+              <div className="divide-y rounded-md border">
+                {templates.map((t) => (
+                  <div key={t.id} className="flex items-center gap-3 p-3">
+                    <div className="min-w-0 flex-1">
+                      <div className="text-sm font-medium truncate">{t.name}</div>
+                      <div className="text-xs text-muted-foreground">
+                        {t.language} · {t.parameters.length} variável(is)
+                      </div>
+                    </div>
+                    <Button size="icon" variant="ghost" onClick={() => openEdit(t)}>
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <AlertDialog>
+                      <AlertDialogTrigger asChild>
+                        <Button size="icon" variant="ghost">
+                          <Trash2 className="h-4 w-4 text-danger" />
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>Excluir &quot;{t.name}&quot;?</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            Se este template estiver selecionado abaixo (lembrete automático ou
+                            reabrir conversa), o envio correspondente vai parar de funcionar até
+                            você escolher outro. Ação irreversível.
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                          <AlertDialogAction onClick={() => remove.mutate(t.id)}>
+                            Excluir
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  </div>
+                ))}
+              </div>
+            )}
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardContent className="p-6 space-y-4">
+            <div className="space-y-1.5">
+              <Label>Usar para lembrete automático (disparo fora da janela de 24h)</Label>
+              <Select
+                value={usage?.reminder_template_id ?? ""}
+                onValueChange={(v) => setUsage.mutate({ field: "reminder_template_id", templateId: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um template" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Usar para &quot;Enviar modelo&quot; (reabrir conversa na aba Conversas)</Label>
+              <Select
+                value={usage?.reopen_template_id ?? ""}
+                onValueChange={(v) => setUsage.mutate({ field: "reopen_template_id", templateId: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um template" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </CardContent>
+        </Card>
+      </div>
+
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>{editingId ? "Editar template" : "Novo template"}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Nome exato aprovado na Meta</Label>
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+                placeholder="ex: lembrete_checkin_formulario"
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Idioma</Label>
+              <Input
+                value={form.language}
+                onChange={(e) => setForm({ ...form, language: e.target.value })}
+                placeholder="pt_BR"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Variáveis do template (na mesma ordem em que aparecem no texto)</Label>
+              {form.parameters.map((p, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <Input
+                    className="flex-1"
+                    placeholder="nome da variável (ex: nome)"
+                    value={p.parameter_name}
+                    onChange={(e) => updateParam(idx, { parameter_name: e.target.value })}
+                  />
+                  <Select
+                    value={p.source}
+                    onValueChange={(v) => updateParam(idx, { source: v as TemplateSource })}
+                  >
+                    <SelectTrigger className="w-56">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {Object.entries(SOURCE_LABEL).map(([value, label]) => (
+                        <SelectItem key={value} value={value}>
+                          {label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Button size="icon" variant="ghost" onClick={() => removeParam(idx)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ))}
+              <Button variant="outline" size="sm" onClick={addParam}>
+                <Plus className="h-3.5 w-3.5 mr-1.5" /> Adicionar variável
+              </Button>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="ghost" onClick={() => setDialogOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={() => save.mutate()} disabled={save.isPending}>
+              {save.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Salvar
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+    </SectionRow>
+  );
+}
+
+/* ============================== APARÊNCIA ============================== */
 
 const TIMEZONES = [
   "America/Sao_Paulo",

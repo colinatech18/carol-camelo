@@ -238,21 +238,19 @@ function PatientDetail() {
 
   const [draft, setDraft] = useState("");
   const sendManual = useMutation({
-    mutationFn: async (message: string) => {
+    mutationFn: async (vars: { message: string; useTemplate?: boolean }) => {
       const res = await fetch("/api/messages/send-manual", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await getAuthHeader()) },
-        body: JSON.stringify({ patientId: id, message }),
+        body: JSON.stringify({ patientId: id, message: vars.message, useTemplate: vars.useTemplate }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "Erro ao enviar");
       return body as { ok: true };
     },
     // Atualização otimista: mostra a mensagem na tela na hora (com "Enviando…"
-    // no lugar do horário), antes mesmo da confirmação do WhatsApp chegar —
-    // sem isso, a mensagem só aparecia depois do ciclo completo (n8n → Chakra
-    // → Meta) e da próxima checagem automática (2s).
-    onMutate: async (message: string) => {
+    // no lugar do horário), antes mesmo da confirmação do WhatsApp chegar.
+    onMutate: async (vars: { message: string; useTemplate?: boolean }) => {
       await qc.cancelQueries({ queryKey: ["messages", id] });
       const previous = qc.getQueryData<typeof messages>(["messages", id]);
       const optimisticId = `optimistic-${Date.now()}`;
@@ -261,24 +259,24 @@ function PatientDetail() {
         {
           id: optimisticId,
           direction: "outbound" as const,
-          content: message,
+          content: vars.message || "(modelo aprovado)",
           content_type: "text",
           created_at: new Date().toISOString(),
           _pending: true,
         },
       ]);
-      setDraft("");
-      return { previous, message };
+      if (!vars.useTemplate) setDraft("");
+      return { previous, message: vars.message };
     },
-    onError: (e, _message, context) => {
-      // Desfaz a mensagem otimista e devolve o texto pra caixa, sem perder o
-      // que a pessoa escreveu.
+    onError: (e, vars, context) => {
+      // Desfaz a mensagem otimista e devolve o texto pra caixa (só faz
+      // sentido devolver pra caixa no caso de texto livre, não de template).
       if (context?.previous) qc.setQueryData(["messages", id], context.previous);
-      setDraft(context?.message ?? "");
+      if (!vars.useTemplate) setDraft(context?.message ?? "");
       const code = e instanceof Error ? e.message : "";
       if (code === "outside_24h_window") {
         toast.error(
-          "Fora da janela de 24h: o paciente precisa mandar uma mensagem antes de você poder responder livremente.",
+          "Fora da janela de 24h: o paciente precisa mandar uma mensagem antes de você poder responder livremente. Use \"Enviar modelo\" para reabrir a conversa.",
         );
       } else if (code === "no_phone") {
         toast.error("Este paciente não tem telefone cadastrado.");
@@ -290,8 +288,6 @@ function PatientDetail() {
     },
     onSuccess: () => {
       toast.success("Mensagem enviada");
-      // A checagem automática (2s) troca o item otimista pelo registro real
-      // assim que o n8n confirmar o envio de volta.
     },
   });
 
@@ -595,24 +591,37 @@ function PatientDetail() {
                   onKeyDown={(e) => {
                     if (e.key === "Enter" && !e.shiftKey) {
                       e.preventDefault();
-                      if (draft.trim()) sendManual.mutate(draft.trim());
+                      if (draft.trim()) sendManual.mutate({ message: draft.trim() });
                     }
                   }}
                   className="resize-none"
                 />
+                <div className="flex flex-col gap-1.5 shrink-0 self-end">
+                  <Button
+                    size="icon"
+                    disabled={!draft.trim()}
+                    onClick={() => sendManual.mutate({ message: draft.trim() })}
+                    title="Enviar mensagem (só dentro da janela de 24h)"
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </div>
+              </div>
+              <div className="flex items-center justify-between gap-2">
+                <p className="text-xs text-muted-foreground">
+                  Texto livre só funciona se o paciente mandou mensagem nas últimas 24h. Enter envia,
+                  Shift+Enter quebra linha.
+                </p>
                 <Button
-                  size="icon"
-                  className="shrink-0 self-end"
-                  disabled={!draft.trim()}
-                  onClick={() => sendManual.mutate(draft.trim())}
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0"
+                  onClick={() => sendManual.mutate({ message: "", useTemplate: true })}
+                  title="Envia o modelo aprovado pela Meta — funciona mesmo fora da janela de 24h, útil pra reabrir a conversa"
                 >
-                  <Send className="h-4 w-4" />
+                  Enviar modelo (reabrir conversa)
                 </Button>
               </div>
-              <p className="text-xs text-muted-foreground">
-                Só funciona se o paciente mandou mensagem nas últimas 24h (regra do WhatsApp). Enter
-                envia, Shift+Enter quebra linha.
-              </p>
             </CardContent>
           </Card>
         </TabsContent>
