@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { requireUser } from "../_lib/requireAdmin.js";
 import { internalError } from "../_lib/errorResponse.js";
+import { buildTemplatePayload, renderTextTemplate, type WhatsappTemplateRow } from "../_lib/whatsappTemplate.js";
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL!,
@@ -10,6 +11,7 @@ const supabaseAdmin = createClient(
 
 const MAX_PATIENTS_PER_REQUEST = 200;
 const N8N_CALL_TIMEOUT_MS = 10_000;
+const DEFAULT_TEMPLATE_TEXT = "Olá {{name}}! Não se esqueça de preencher seu diário de hoje: {{link}}";
 
 type SkipReason = "not_found" | "archived" | "no_phone" | "no_token";
 
@@ -30,13 +32,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   const { data: settings, error: settingsError } = await supabaseAdmin
     .from("app_settings")
-    .select("reminder_message_template")
+    .select("reminder_message_template, reminder_template_id")
     .eq("id", true)
     .maybeSingle();
   if (settingsError) return internalError(res, "messages/send-form:settings", settingsError);
-  const template =
-    settings?.reminder_message_template ||
-    "Olá {{name}}! Não se esqueça de preencher seu diário de hoje: {{link}}";
+
+  const bodyTemplateText = settings?.reminder_message_template || DEFAULT_TEMPLATE_TEXT;
+
+  // Template da Meta a usar quando um paciente estiver fora da janela de 24h.
+  // Cadastrado em `whatsapp_templates`, escolhido em `app_settings.reminder_template_id`
+  // — trocar isso NUNCA exige alteração de código.
+  let reminderTemplate: WhatsappTemplateRow | null = null;
+  if (settings?.reminder_template_id) {
+    const { data: templateRow, error: templateError } = await supabaseAdmin
+      .from("whatsapp_templates")
+      .select("id, name, language, parameters")
+      .eq("id", settings.reminder_template_id)
+      .maybeSingle();
+    if (templateError) return internalError(res, "messages/send-form:template", templateError);
+    reminderTemplate = (templateRow as WhatsappTemplateRow) ?? null;
+  }
 
   const body = (req.body ?? {}) as { patientIds?: unknown };
   const patientIds = Array.isArray(body.patientIds)
@@ -54,12 +69,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .from("patients")
     .select("id, name, phone, public_token, archived_at")
     .in("id", patientIds);
-
   if (fetchError) return internalError(res, "messages/send-form:fetch", fetchError);
 
   const found = new Map((patients ?? []).map((p: any) => [p.id as string, p]));
 
-  const ready: Array<{ patientId: string; name: string; phone: string; link: string; message: string }> = [];
+  const ready: Array<{ patientId: string; name: string; phone: string; link: string }> = [];
   const skipped: Array<{ patientId: string; reason: SkipReason }> = [];
 
   for (const id of patientIds) {
@@ -80,10 +94,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       skipped.push({ patientId: id, reason: "no_token" });
       continue;
     }
-    const firstName = String(p.name).trim().split(/\s+/)[0] ?? p.name;
-    const link = `${appUrl.replace(/\/$/, "")}/formulario/${p.public_token}`;
-    const message = template.replace(/\{\{\s*name\s*\}\}/g, firstName).replace(/\{\{\s*link\s*\}\}/g, link);
-    ready.push({ patientId: p.id, name: p.name, phone: p.phone, link, message });
+    ready.push({
+      patientId: p.id,
+      name: p.name,
+      phone: p.phone,
+      link: `${appUrl.replace(/\/$/, "")}/formulario/${p.public_token}`,
+    });
   }
 
   if (ready.length === 0) {
@@ -91,11 +107,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Decide, por paciente, se dá pra mandar texto livre (janela de 24h aberta
-  // desde a última mensagem RECEBIDA dele) ou se precisa de template aprovado
-  // pela Meta (fora da janela, ou nunca conversou antes). Calculado aqui, com
-  // dados que já temos em `messages` — não dá pra confiar na resposta síncrona
-  // da API de envio de texto livre pra isso: ela retorna sucesso na hora mesmo
-  // quando a mensagem será rejeitada depois, de forma assíncrona.
+  // desde a última mensagem RECEBIDA dele) ou se precisa de template — não dá
+  // pra confiar na resposta síncrona da API de texto livre pra isso: ela
+  // retorna sucesso na hora mesmo quando a mensagem será rejeitada depois.
   const readyIds = ready.map((r) => r.patientId);
   const { data: lastInboundRows, error: inboundError } = await supabaseAdmin
     .from("messages")
@@ -103,13 +117,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     .in("patient_id", readyIds)
     .eq("direction", "inbound")
     .order("created_at", { ascending: false });
-
   if (inboundError) return internalError(res, "messages/send-form:inbound-lookup", inboundError);
 
   const lastInboundByPatient = new Map<string, string>();
   for (const row of lastInboundRows ?? []) {
-    // Já vem ordenado do mais recente pro mais antigo — só guarda a primeira
-    // ocorrência de cada paciente (a mais recente).
     if (!lastInboundByPatient.has(row.patient_id)) {
       lastInboundByPatient.set(row.patient_id, row.created_at);
     }
@@ -120,15 +131,35 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const withChannel = ready.map((r) => {
     const last = lastInboundByPatient.get(r.patientId);
     const withinWindow = last ? now - new Date(last).getTime() < WINDOW_MS : false;
-    return { ...r, channel: withinWindow ? "text" : "template" };
+    const channel = withinWindow ? "text" : "template";
+    const message = renderTextTemplate(bodyTemplateText, { patientName: r.name, link: r.link });
+    const templatePayload =
+      channel === "template" && reminderTemplate
+        ? buildTemplatePayload(reminderTemplate, { patientName: r.name, link: r.link })
+        : undefined;
+    return { ...r, channel, message, templatePayload };
   });
+
+  // Sem template configurado, ninguém fora da janela recebe nada — melhor
+  // reportar como "pulado" com motivo claro do que mandar um payload inválido.
+  const finalReady = withChannel.filter((r) => {
+    if (r.channel === "template" && !r.templatePayload) {
+      skipped.push({ patientId: r.patientId, reason: "no_phone" });
+      return false;
+    }
+    return true;
+  });
+
+  if (finalReady.length === 0) {
+    return res.status(200).json({ sent: 0, skipped });
+  }
 
   let n8nOk = false;
   try {
     const n8nRes = await fetch(webhookUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json", "X-Webhook-Secret": secret },
-      body: JSON.stringify({ patients: withChannel }),
+      body: JSON.stringify({ patients: finalReady }),
       signal: AbortSignal.timeout(N8N_CALL_TIMEOUT_MS),
     });
     n8nOk = n8nRes.ok;
@@ -146,6 +177,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // O registro no histórico (tabela `messages`, direction: "outbound") é feito
   // pelo próprio n8n, chamando api/messages/inbound.ts depois de enviar de
-  // verdade via Chakra HQ — este endpoint só aciona o disparo, não grava nada.
-  return res.status(200).json({ sent: ready.length, skipped });
+  // verdade — este endpoint só aciona o disparo, não grava nada.
+  return res.status(200).json({ sent: finalReady.length, skipped });
 }

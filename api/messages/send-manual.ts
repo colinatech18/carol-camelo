@@ -2,6 +2,7 @@ import type { VercelRequest, VercelResponse } from "@vercel/node";
 import { createClient } from "@supabase/supabase-js";
 import { requireUser } from "../_lib/requireAdmin.js";
 import { internalError } from "../_lib/errorResponse.js";
+import { buildTemplatePayload, renderTextTemplate, type WhatsappTemplateRow } from "../_lib/whatsappTemplate.js";
 
 const supabaseAdmin = createClient(
   process.env.SUPABASE_URL!,
@@ -55,6 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   let message = rawMessage;
   let link = "";
+  let templatePayload: ReturnType<typeof buildTemplatePayload> | undefined;
 
   if (useTemplate) {
     // Template (Meta-approved) funciona independente da janela de 24h — é
@@ -66,14 +68,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     const { data: settings, error: settingsError } = await supabaseAdmin
       .from("app_settings")
-      .select("reminder_message_template")
+      .select("reminder_message_template, reopen_template_id")
       .eq("id", true)
       .maybeSingle();
     if (settingsError) return internalError(res, "messages/send-manual:settings", settingsError);
 
-    const template = settings?.reminder_message_template || DEFAULT_TEMPLATE;
-    const firstName = String(patient.name).trim().split(/\s+/)[0] ?? patient.name;
-    message = template.replace(/\{\{\s*name\s*\}\}/g, firstName).replace(/\{\{\s*link\s*\}\}/g, link);
+    if (!settings?.reopen_template_id) {
+      return res.status(500).json({ error: "Nenhum template configurado para reabrir conversa" });
+    }
+    const { data: templateRow, error: templateError } = await supabaseAdmin
+      .from("whatsapp_templates")
+      .select("id, name, language, parameters")
+      .eq("id", settings.reopen_template_id)
+      .maybeSingle();
+    if (templateError) return internalError(res, "messages/send-manual:template", templateError);
+    if (!templateRow) return res.status(500).json({ error: "Template configurado não foi encontrado" });
+
+    const template = settings.reminder_message_template || DEFAULT_TEMPLATE;
+    message = renderTextTemplate(template, { patientName: patient.name, link });
+    templatePayload = buildTemplatePayload(templateRow as WhatsappTemplateRow, {
+      patientName: patient.name,
+      link,
+    });
   } else {
     // Mensagem manual em texto livre — só funciona dentro da janela de 24h
     // (regra do WhatsApp). Sem template de fallback aqui: bloqueia com erro
@@ -110,6 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             link,
             message,
             channel: useTemplate ? "template" : "text",
+            templatePayload,
           },
         ],
       }),
