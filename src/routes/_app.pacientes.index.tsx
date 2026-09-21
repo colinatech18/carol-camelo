@@ -1,18 +1,7 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import {
-  Plus,
-  Search,
-  Pencil,
-  Download,
-  ArrowUp,
-  ArrowDown,
-  ArrowUpDown,
-  Archive,
-  ArchiveRestore,
-  X,
-} from "lucide-react";
+import { Plus, Search, Pencil, Download, ArrowUp, ArrowDown, ArrowUpDown, Archive, ArchiveRestore, Trash2, X } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
@@ -96,7 +85,6 @@ type PatientForm = {
   responsibleId: string;
   status: "active" | "completed" | "paused";
   notes: string;
-  // "" = usa o formulário padrão do sistema (app_settings.default_form_id).
   assignedFormId: string;
 };
 
@@ -106,7 +94,6 @@ const emptyForm: PatientForm = {
   responsibleId: "", status: "active", notes: "", assignedFormId: "",
 };
 
-// Escapa uma célula para CSV com delimitador ";" (mais amigável ao Excel pt-BR).
 function csvCell(v: unknown) {
   const s = String(v ?? "");
   return /[";\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
@@ -115,8 +102,6 @@ function csvCell(v: unknown) {
 function PatientsList() {
   const qc = useQueryClient();
   const navigate = useNavigate();
-  // Sempre busca ativos + arquivados juntos (uma só ida ao banco); a alternância
-  // "Ativos" / "Arquivados" abaixo filtra localmente qual conjunto é exibido.
   const { data: allPatients = [], isLoading } = useEnrichedPatients({ includeArchived: true });
   const { data: users = [] } = useQuery({
     queryKey: ["users"],
@@ -185,8 +170,6 @@ function PatientsList() {
     return arr;
   }, [filtered, sortBy, sortDir]);
 
-  // Troca de visão (Ativos/Arquivados) ou de filtro limpa a seleção — evita
-  // aplicar uma ação em massa sobre uma linha que não está mais visível.
   useEffect(() => {
     setSelected(new Set());
   }, [viewArchived, statusFilter, q]);
@@ -391,6 +374,28 @@ function PatientsList() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar"),
   });
 
+  // Exclusão PERMANENTE — só disponível pra pacientes já arquivados (trava de
+  // segurança), apaga em cascata todo o histórico. Rota admin-only.
+  const bulkDelete = useMutation({
+    mutationFn: async (ids: string[]) => {
+      const res = await fetch("/api/patients/delete", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await getAuthHeader()) },
+        body: JSON.stringify({ patientIds: ids }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Erro ao excluir");
+      return body as { deleted: string[]; skipped: Array<{ patientId: string; reason: string }> };
+    },
+    onSuccess: (result) => {
+      qc.invalidateQueries({ queryKey: ["patients", "enriched"] });
+      setSelected(new Set());
+      if (result.deleted.length > 0) toast.success(`${result.deleted.length} paciente(s) excluído(s) permanentemente`);
+      if (result.skipped.length > 0) toast.warning(`${result.skipped.length} paciente(s) não puderam ser excluídos`);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao excluir"),
+  });
+
   const allVisibleSelected = sorted.length > 0 && selected.size === sorted.length;
   const someVisibleSelected = selected.size > 0 && !allVisibleSelected;
 
@@ -422,7 +427,6 @@ function PatientsList() {
         </div>
       </div>
 
-      {/* Alternância Ativos / Arquivados */}
       <div className="inline-flex rounded-md border p-0.5 bg-muted/40">
         <button
           type="button"
@@ -446,7 +450,6 @@ function PatientsList() {
         </button>
       </div>
 
-      {/* Barra de ação em massa */}
       {selected.size > 0 && (
         <div className="flex flex-wrap items-center gap-2 rounded-md border bg-muted/40 px-4 py-2.5">
           <span className="text-sm font-medium">{selected.size} selecionado(s)</span>
@@ -505,14 +508,43 @@ function PatientsList() {
           )}
 
           {viewArchived && (
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={bulkRestore.isPending}
-              onClick={() => bulkRestore.mutate(selectedIds)}
-            >
-              <ArchiveRestore className="h-3.5 w-3.5 mr-1.5" /> Restaurar
-            </Button>
+            <>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={bulkRestore.isPending}
+                onClick={() => bulkRestore.mutate(selectedIds)}
+              >
+                <ArchiveRestore className="h-3.5 w-3.5 mr-1.5" /> Restaurar
+              </Button>
+
+              <AlertDialog>
+                <AlertDialogTrigger asChild>
+                  <Button size="sm" variant="outline" className="text-danger hover:text-danger">
+                    <Trash2 className="h-3.5 w-3.5 mr-1.5" /> Excluir permanentemente
+                  </Button>
+                </AlertDialogTrigger>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>Excluir {selected.size} paciente(s) PERMANENTEMENTE?</AlertDialogTitle>
+                    <AlertDialogDescription>
+                      Isso apaga de vez o paciente e TODO o histórico dele — mensagens, respostas de
+                      formulário, consultas e anotações de prontuário. Não tem como desfazer, nem
+                      restaurar depois. Use só pra dados de teste ou quando tiver certeza absoluta.
+                    </AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>Cancelar</AlertDialogCancel>
+                    <AlertDialogAction
+                      className="bg-danger text-danger-foreground hover:bg-danger/90"
+                      onClick={() => bulkDelete.mutate(selectedIds)}
+                    >
+                      Excluir permanentemente
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </>
           )}
         </div>
       )}
@@ -687,10 +719,6 @@ function PatientsList() {
                     {activeForms.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
-                <p className="text-xs text-muted-foreground">
-                  Formulário enviado a este paciente. Deixe em "Padrão do sistema" para usar o
-                  formulário definido em Configurações.
-                </p>
               </div>
             </div>
           </div>
