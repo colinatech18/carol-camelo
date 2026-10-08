@@ -23,10 +23,17 @@ export interface DispatchResult {
  * livre vs template por paciente (janela de 24h), monta o payload de
  * template a partir do que estiver cadastrado em `whatsapp_templates`, e
  * aciona o webhook do n8n. Usado tanto por api/messages/send-form.ts (staff
- * clicando "Enviar mensagem") quanto por api/cron/no-response.ts (robô
- * diário, paciente sem responder há 2+ dias).
+ * clicando "Enviar mensagem") quanto por api/cron/daily-form.ts (disparo
+ * diário automático).
+ *
+ * `options.timeoutMs`: quanto esperar a resposta do n8n. O webhook do n8n só
+ * responde quando termina de processar todos os pacientes do lote, então
+ * lotes maiores precisam de mais tempo que o padrão de 10s.
  */
-export async function dispatchReminders(patientIdsInput: string[]): Promise<DispatchResult> {
+export async function dispatchReminders(
+  patientIdsInput: string[],
+  options: { timeoutMs?: number } = {},
+): Promise<DispatchResult> {
   const webhookUrl = process.env.N8N_SEND_WEBHOOK_URL;
   const secret = process.env.N8N_SEND_WEBHOOK_SECRET;
   const appUrl = process.env.PUBLIC_APP_URL;
@@ -142,7 +149,7 @@ export async function dispatchReminders(patientIdsInput: string[]): Promise<Disp
     method: "POST",
     headers: { "Content-Type": "application/json", "X-Webhook-Secret": secret },
     body: JSON.stringify({ patients: finalReady }),
-    signal: AbortSignal.timeout(N8N_CALL_TIMEOUT_MS),
+    signal: AbortSignal.timeout(options.timeoutMs ?? N8N_CALL_TIMEOUT_MS),
   });
 
   if (!n8nRes.ok) {
