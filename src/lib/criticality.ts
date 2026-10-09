@@ -1,11 +1,35 @@
 import type { Criticality, ResponseEntry } from "@/types";
 import { differenceInCalendarDays, parseISO } from "date-fns";
 
+/**
+ * Fuso de referência do app: horário de Brasília. Todo "dia" do sistema
+ * (dia da resposta, dia do programa, "respondeu hoje") é contado nesse fuso,
+ * e não em UTC — que fica 3h na frente e fazia o dia virar às 21h.
+ */
+export const APP_TIMEZONE = "America/Sao_Paulo";
+
+/** Data (yyyy-MM-dd) do instante informado, no horário de Brasília. */
+export function brasiliaDateString(input: Date | string | number = new Date()): string {
+  const d = input instanceof Date ? input : new Date(input);
+  const parts = new Intl.DateTimeFormat("en-US", {
+    timeZone: APP_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(d);
+  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
+  return `${get("year")}-${get("month")}-${get("day")}`;
+}
+
+/**
+ * Dia do programa (1..30) em `today`, contando o "hoje" no horário de
+ * Brasília. parseISO interpreta "yyyy-MM-dd" como meia-noite LOCAL nos dois
+ * lados da conta, então a diferença de dias não depende do fuso de quem roda
+ * (navegador ou servidor da Vercel, que roda em UTC).
+ */
 export function programDay(startDate: string, today: Date = new Date()): number {
-  // parseISO interpreta "yyyy-MM-dd" como meia-noite LOCAL. `new Date(str)` a trataria
-  // como meia-noite UTC, que em fusos negativos (ex.: UTC-3, Brasil) cai no dia anterior
-  // — fazendo um paciente que começa hoje aparecer como "dia 2".
-  return Math.min(30, Math.max(1, differenceInCalendarDays(today, parseISO(startDate)) + 1));
+  const todayBrt = parseISO(brasiliaDateString(today));
+  return Math.min(30, Math.max(1, differenceInCalendarDays(todayBrt, parseISO(startDate)) + 1));
 }
 
 /**
@@ -40,5 +64,5 @@ export function criticalityFromResponses(responses: ResponseEntry[]): Criticalit
 export function daysSinceLastResponse(responses: ResponseEntry[], today: Date = new Date()): number | null {
   if (!responses.length) return null;
   const latest = [...responses].sort((a, b) => b.date.localeCompare(a.date))[0];
-  return differenceInCalendarDays(today, parseISO(latest.date));
+  return differenceInCalendarDays(parseISO(brasiliaDateString(today)), parseISO(latest.date));
 }

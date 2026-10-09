@@ -1,6 +1,11 @@
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
-import { criticalityFromResponses, daysSinceLastResponse, programDay } from "@/lib/criticality";
+import {
+  brasiliaDateString,
+  criticalityFromResponses,
+  daysSinceLastResponse,
+  programDay,
+} from "@/lib/criticality";
 import type { Patient, ResponseEntry } from "@/types";
 
 export interface EnrichedPatient extends Patient {
@@ -40,17 +45,24 @@ export function useEnrichedPatients(opts: { includeArchived?: boolean } = {}) {
       return (patients ?? []).map((p: any) => {
         const resp: ResponseEntry[] = (responses ?? [])
           .filter((r: any) => r.patient_id === p.id)
-          .map((r: any) => ({
-            id: r.id,
-            patientId: r.patient_id,
-            date: r.submitted_at?.slice(0, 10) ?? "",
-            programDay: programDay(p.program_start_date),
-            formId: r.form_id ?? undefined,
-            // O jsonb já vem no formato { questionId, value, note?, isScale? }
-            // gravado por api/forms/submit.ts — não precisa reshape aqui.
-            answers: (r.responses ?? []) as ResponseEntry["answers"],
-            createdAt: r.submitted_at ?? "",
-          }));
+          .map((r: any) => {
+            const submitted = r.submitted_at ? new Date(r.submitted_at) : null;
+            return {
+              id: r.id,
+              patientId: r.patient_id,
+              // Dia da resposta no horário de Brasília (não UTC): quem responde
+              // depois das 21h continua com a resposta no dia certo.
+              date: submitted ? brasiliaDateString(submitted) : "",
+              // Dia do programa NA DATA DA RESPOSTA — antes usava "hoje" e todas
+              // as respostas apareciam como o mesmo dia.
+              programDay: programDay(p.program_start_date, submitted ?? new Date()),
+              formId: r.form_id ?? undefined,
+              // O jsonb já vem no formato { questionId, value, note?, isScale? }
+              // gravado por api/forms/submit.ts — não precisa reshape aqui.
+              answers: (r.responses ?? []) as ResponseEntry["answers"],
+              createdAt: r.submitted_at ?? "",
+            };
+          });
 
         const patient: Patient = {
           id: p.id,

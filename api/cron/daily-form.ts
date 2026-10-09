@@ -45,10 +45,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Quem já respondeu hoje não precisa receber de novo (é 1 resposta por dia).
-  // "Hoje" em UTC, a mesma janela da constraint form_responses_patient_date_uniq.
-  const now = new Date();
+  // "Hoje" no horário de Brasília (UTC-3, sem horário de verão desde 2019), a
+  // mesma janela da constraint form_responses_patient_date_uniq. Contar o dia
+  // em UTC fazia quem respondeu depois das 21h de ontem parecer "já respondeu
+  // hoje" e ficar sem o disparo da manhã.
+  const BRT_OFFSET_HOURS = 3;
+  const brtNow = new Date(Date.now() - BRT_OFFSET_HOURS * 60 * 60 * 1000);
   const dayStart = new Date(
-    Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()),
+    Date.UTC(brtNow.getUTCFullYear(), brtNow.getUTCMonth(), brtNow.getUTCDate(), BRT_OFFSET_HOURS),
   ).toISOString();
 
   const { data: todays, error: todaysError } = await supabaseAdmin

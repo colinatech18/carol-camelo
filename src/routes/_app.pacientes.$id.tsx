@@ -17,7 +17,7 @@ import { CriticalityBadge } from "@/components/CriticalityBadge";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { getAuthHeader } from "@/lib/authHeader";
-import { criticalityFromResponses, programDay, averageOfEntry } from "@/lib/criticality";
+import { criticalityFromResponses, programDay, averageOfEntry, brasiliaDateString } from "@/lib/criticality";
 import type { FormField } from "@/lib/forms-store";
 import { cn } from "@/lib/utils";
 import { format, parseISO, isSameDay } from "date-fns";
@@ -118,8 +118,8 @@ function PatientDetail() {
       return (data ?? []).map((r: any) => ({
         id: r.id,
         patientId: r.patient_id,
-        date: r.submitted_at?.slice(0, 10) ?? "",
-        programDay: programDay(patient?.startDate ?? ""),
+        date: r.submitted_at ? brasiliaDateString(r.submitted_at) : "",
+        programDay: programDay(patient?.startDate ?? "", r.submitted_at ? new Date(r.submitted_at) : new Date()),
         formId: r.form_id ?? undefined,
         answers: (r.responses ?? []) as ResponseEntry["answers"],
         createdAt: r.submitted_at ?? "",

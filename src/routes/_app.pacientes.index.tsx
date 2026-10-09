@@ -30,6 +30,7 @@ import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import { brasiliaDateString } from "@/lib/criticality";
 import type { Patient } from "@/types";
 
 export const Route = createFileRoute("/_app/pacientes/")({ component: PatientsList });
@@ -90,7 +91,7 @@ type PatientForm = {
 
 const emptyForm: PatientForm = {
   name: "", email: "", whatsapp: "",
-  startDate: new Date().toISOString().slice(0, 10),
+  startDate: "",
   responsibleId: "", status: "active", notes: "", assignedFormId: "",
 };
 
@@ -227,7 +228,7 @@ function PatientsList() {
 
   function openCreate() {
     setEditing(null);
-    setForm({ ...emptyForm, responsibleId: users[0]?.id ?? "" });
+    setForm({ ...emptyForm, startDate: brasiliaDateString(), responsibleId: users[0]?.id ?? "" });
     setOpen(true);
   }
 

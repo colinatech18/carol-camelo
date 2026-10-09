@@ -19,6 +19,7 @@ import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
+import { brasiliaDateString } from "@/lib/criticality";
 
 export const Route = createFileRoute("/_app/prontuario/$id")({ component: PatientRecord });
 
@@ -153,7 +154,7 @@ function PatientRecord() {
   const grouped = useMemo(() => {
     const map = new Map<string, Note[]>();
     for (const n of notes) {
-      const day = n.created_at.slice(0, 10);
+      const day = brasiliaDateString(n.created_at);
       const list = map.get(day);
       if (list) list.push(n);
       else map.set(day, [n]);

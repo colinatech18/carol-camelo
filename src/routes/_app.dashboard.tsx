@@ -12,7 +12,7 @@ import { CriticalityBadge } from "@/components/CriticalityBadge";
 import { useEnrichedPatients } from "@/hooks/useEnrichedPatients";
 import { supabase } from "@/lib/supabase";
 import { getAuthHeader } from "@/lib/authHeader";
-import { averageOfEntry } from "@/lib/criticality";
+import { averageOfEntry, brasiliaDateString } from "@/lib/criticality";
 import { cn } from "@/lib/utils";
 import { format, startOfDay, endOfDay, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -86,7 +86,7 @@ function DashboardPage() {
     return c;
   }, [filtered]);
 
-  const todayStr = new Date().toISOString().slice(0, 10);
+  const todayStr = brasiliaDateString();
   const respondedToday = filtered.filter((p) => p.responses.some((r) => r.date === todayStr)).length;
   const responseRate = filtered.length ? Math.round((respondedToday / filtered.length) * 100) : 0;
 
