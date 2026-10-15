@@ -16,7 +16,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const callerId = await requireAdmin(req, res, supabaseAdmin);
   if (!callerId) return; // requireAdmin já escreveu a resposta de erro (401/403)
 
-  const { name, email, password, role } = req.body;
+  const { name, email, password, role } = req.body ?? {};
   if (!name || !email || !password || !role) {
     return res.status(400).json({ error: "Campos obrigatórios ausentes" });
   }
@@ -36,16 +36,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(400).json({ error: error.message });
   }
 
-  // Mantém `profiles` como fonte de verdade de name/role (mesmo padrão de update-user.ts).
-  const { error: profileError } = await supabaseAdmin
-    .from("profiles")
-    .insert({ id: data.user.id, name, role });
+  // `profiles` é de onde a app lê nome/papel/e-mail. O banco pode já ter criado
+  // essa linha sozinho (gatilho em auth.users a partir do user_metadata), então
+  // um INSERT puro falharia por duplicidade. O upsert cobre os dois casos: cria
+  // se não existir, atualiza se já existir — e sempre manda o e-mail.
+  const { error: profileError } = await supabaseAdmin.from("profiles").upsert(
+    { id: data.user.id, name, email: data.user.email ?? email, role },
+    { onConflict: "id" },
+  );
 
   if (profileError) {
-    // O usuário de auth já foi criado; se o profile falhar, desfaz para não deixar
-    // um usuário "fantasma" sem profile (mesmo raciocínio do delete-user.ts, mas
-    // ao contrário: aqui evitamos criar um estado inconsistente).
-    console.error("create-user: erro ao criar profile, revertendo auth.users", profileError);
+    // Não deixa um login "fantasma" sem perfil: desfaz a criação no auth.
+    console.error("create-user: erro ao gravar profile, revertendo auth.users", profileError);
     await supabaseAdmin.auth.admin.deleteUser(data.user.id);
     return res.status(500).json({ error: "internal_error" });
   }
