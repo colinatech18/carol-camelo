@@ -1,11 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "./_lib/requireAdmin.js";
-
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { internalError } from "./_lib/errorResponse.js";
+import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 
 const ROLES = ["admin", "psicologo", "psiquiatra", "recepcionista"];
 
@@ -16,13 +12,18 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   const callerId = await requireAdmin(req, res, supabaseAdmin);
   if (!callerId) return; // requireAdmin já escreveu a resposta de erro (401/403)
 
-  const { name, email, password, role } = req.body ?? {};
-  if (!name || !email || !password || !role) {
+  const { name, email: rawEmail, password, role } = req.body ?? {};
+  if (!name || !rawEmail || !password || !role) {
     return res.status(400).json({ error: "Campos obrigatórios ausentes" });
   }
   if (!ROLES.includes(role)) {
     return res.status(400).json({ error: "role inválida" });
   }
+
+  // Normaliza antes de gravar/comparar — sem isso, " Ana@X.com " e "ana@x.com"
+  // viram duas contas diferentes aos olhos do app (ainda que o Supabase Auth
+  // normalize por baixo dos panos, o que gera mensagem de "já existe" confusa).
+  const email = String(rawEmail).trim().toLowerCase();
 
   const { data, error } = await supabaseAdmin.auth.admin.createUser({
     email,
@@ -47,9 +48,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   if (profileError) {
     // Não deixa um login "fantasma" sem perfil: desfaz a criação no auth.
-    console.error("create-user: erro ao gravar profile, revertendo auth.users", profileError);
-    await supabaseAdmin.auth.admin.deleteUser(data.user.id);
-    return res.status(500).json({ error: "internal_error" });
+    try {
+      await supabaseAdmin.auth.admin.deleteUser(data.user.id);
+    } catch (rollbackError) {
+      // O rollback falhou: o usuário ficou no auth.users sem perfil correspondente.
+      // Loga com o id pra permitir limpeza manual, em vez de descartar o erro.
+      console.error(
+        `create-user: FALHA NO ROLLBACK, usuário órfão criado (id=${data.user.id})`,
+        rollbackError,
+      );
+    }
+    return internalError(res, "create-user:profile", profileError);
   }
 
   return res.status(200).json({ id: data.user.id });

@@ -1,5 +1,15 @@
 import { Link, useRouterState, useNavigate } from "@tanstack/react-router";
-import { LayoutDashboard, Users, ClipboardList, FileText, Settings, LogOut, ChevronLeft, ChevronRight } from "lucide-react";
+import {
+  LayoutDashboard,
+  Users,
+  ClipboardList,
+  ListChecks,
+  FileText,
+  Settings,
+  LogOut,
+  ChevronLeft,
+  ChevronRight,
+} from "lucide-react";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -14,11 +24,32 @@ const ROLE_LABEL: Record<string, string> = {
 };
 
 const allItems = [
-  { to: "/dashboard", label: "Dashboard", icon: LayoutDashboard, roles: ["admin", "psicologo", "psiquiatra", "recepcionista"] },
-  { to: "/pacientes", label: "Pacientes", icon: Users, roles: ["admin", "psicologo", "psiquiatra", "recepcionista"] },
-  { to: "/prontuarios", label: "Prontuários", icon: FileText, roles: ["admin", "psicologo", "psiquiatra", "recepcionista"] },
+  {
+    to: "/dashboard",
+    label: "Dashboard",
+    icon: LayoutDashboard,
+    roles: ["admin", "psicologo", "psiquiatra", "recepcionista"],
+  },
+  {
+    to: "/pacientes",
+    label: "Pacientes",
+    icon: Users,
+    roles: ["admin", "psicologo", "psiquiatra", "recepcionista"],
+  },
+  {
+    to: "/prontuarios",
+    label: "Prontuários",
+    icon: FileText,
+    roles: ["admin", "psicologo", "psiquiatra", "recepcionista"],
+  },
   { to: "/formularios", label: "Formulários", icon: ClipboardList, roles: ["admin", "psicologo"] },
-  { to: "/configuracoes", label: "Configurações", icon: Settings, roles: ["admin", "psicologo", "psiquiatra", "recepcionista"] },
+  { to: "/atividades", label: "Atividades", icon: ListChecks, roles: ["admin", "psicologo"] },
+  {
+    to: "/configuracoes",
+    label: "Configurações",
+    icon: Settings,
+    roles: ["admin", "psicologo", "psiquiatra", "recepcionista"],
+  },
 ];
 
 export function Sidebar() {
@@ -30,10 +61,12 @@ export function Sidebar() {
   const [collapsed, setCollapsed] = useState(false);
 
   return (
-    <aside className={cn(
-      "hidden md:flex sticky top-0 h-screen shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-300",
-      collapsed ? "w-16" : "w-64"
-    )}>
+    <aside
+      className={cn(
+        "hidden md:flex sticky top-0 h-screen shrink-0 flex-col border-r border-sidebar-border bg-sidebar text-sidebar-foreground transition-all duration-300",
+        collapsed ? "w-16" : "w-64",
+      )}
+    >
       {/* Header */}
       <div className="shrink-0 flex items-center gap-2 px-3 py-5 border-b border-sidebar-border relative">
         <ClinicLogo className="h-9 w-9 rounded-lg bg-sidebar-primary text-sidebar-primary-foreground" />
@@ -66,7 +99,7 @@ export function Sidebar() {
                 collapsed ? "justify-center" : "",
                 active
                   ? "bg-sidebar-primary text-sidebar-primary-foreground"
-                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground"
+                  : "text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-accent-foreground",
               )}
             >
               <Icon className="h-4 w-4 shrink-0" />
@@ -89,7 +122,10 @@ export function Sidebar() {
           size="sm"
           title={collapsed ? "Sair" : undefined}
           className={cn("w-full", collapsed ? "justify-center px-0" : "justify-start")}
-          onClick={async () => { await logout(); navigate({ to: "/login" }); }}
+          onClick={async () => {
+            await logout();
+            navigate({ to: "/login" });
+          }}
         >
           <LogOut className="h-4 w-4 shrink-0" />
           {!collapsed && <span className="ml-2">Sair</span>}

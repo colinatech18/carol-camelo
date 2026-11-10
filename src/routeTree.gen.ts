@@ -14,14 +14,17 @@ import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app.index'
 import { Route as FormularioTokenRouteImport } from './routes/formulario.$token'
+import { Route as AtividadesTokenRouteImport } from './routes/atividades.$token'
 import { Route as AppProntuariosRouteImport } from './routes/_app.prontuarios'
 import { Route as AppDashboardRouteImport } from './routes/_app.dashboard'
 import { Route as AppConfiguracoesRouteImport } from './routes/_app.configuracoes'
 import { Route as AppPacientesIndexRouteImport } from './routes/_app.pacientes.index'
 import { Route as AppFormulariosIndexRouteImport } from './routes/_app.formularios.index'
+import { Route as AppAtividadesIndexRouteImport } from './routes/_app.atividades.index'
 import { Route as AppProntuarioIdRouteImport } from './routes/_app.prontuario.$id'
 import { Route as AppPacientesIdRouteImport } from './routes/_app.pacientes.$id'
 import { Route as AppFormulariosIdEditRouteImport } from './routes/_app.formularios.$id.edit'
+import { Route as AppAtividadesIdEditRouteImport } from './routes/_app.atividades.$id.edit'
 
 const RedefinirSenhaRoute = RedefinirSenhaRouteImport.update({
   id: '/redefinir-senha',
@@ -45,6 +48,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
 const FormularioTokenRoute = FormularioTokenRouteImport.update({
   id: '/formulario/$token',
   path: '/formulario/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AtividadesTokenRoute = AtividadesTokenRouteImport.update({
+  id: '/atividades/$token',
+  path: '/atividades/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AppProntuariosRoute = AppProntuariosRouteImport.update({
@@ -72,6 +80,11 @@ const AppFormulariosIndexRoute = AppFormulariosIndexRouteImport.update({
   path: '/formularios/',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAtividadesIndexRoute = AppAtividadesIndexRouteImport.update({
+  id: '/atividades/',
+  path: '/atividades/',
+  getParentRoute: () => AppRoute,
+} as any)
 const AppProntuarioIdRoute = AppProntuarioIdRouteImport.update({
   id: '/prontuario/$id',
   path: '/prontuario/$id',
@@ -87,6 +100,11 @@ const AppFormulariosIdEditRoute = AppFormulariosIdEditRouteImport.update({
   path: '/formularios/$id/edit',
   getParentRoute: () => AppRoute,
 } as any)
+const AppAtividadesIdEditRoute = AppAtividadesIdEditRouteImport.update({
+  id: '/atividades/$id/edit',
+  path: '/atividades/$id/edit',
+  getParentRoute: () => AppRoute,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof AppIndexRoute
@@ -95,11 +113,14 @@ export interface FileRoutesByFullPath {
   '/configuracoes': typeof AppConfiguracoesRoute
   '/dashboard': typeof AppDashboardRoute
   '/prontuarios': typeof AppProntuariosRoute
+  '/atividades/$token': typeof AtividadesTokenRoute
   '/formulario/$token': typeof FormularioTokenRoute
   '/pacientes/$id': typeof AppPacientesIdRoute
   '/prontuario/$id': typeof AppProntuarioIdRoute
+  '/atividades/': typeof AppAtividadesIndexRoute
   '/formularios/': typeof AppFormulariosIndexRoute
   '/pacientes/': typeof AppPacientesIndexRoute
+  '/atividades/$id/edit': typeof AppAtividadesIdEditRoute
   '/formularios/$id/edit': typeof AppFormulariosIdEditRoute
 }
 export interface FileRoutesByTo {
@@ -108,12 +129,15 @@ export interface FileRoutesByTo {
   '/configuracoes': typeof AppConfiguracoesRoute
   '/dashboard': typeof AppDashboardRoute
   '/prontuarios': typeof AppProntuariosRoute
+  '/atividades/$token': typeof AtividadesTokenRoute
   '/formulario/$token': typeof FormularioTokenRoute
   '/': typeof AppIndexRoute
   '/pacientes/$id': typeof AppPacientesIdRoute
   '/prontuario/$id': typeof AppProntuarioIdRoute
+  '/atividades': typeof AppAtividadesIndexRoute
   '/formularios': typeof AppFormulariosIndexRoute
   '/pacientes': typeof AppPacientesIndexRoute
+  '/atividades/$id/edit': typeof AppAtividadesIdEditRoute
   '/formularios/$id/edit': typeof AppFormulariosIdEditRoute
 }
 export interface FileRoutesById {
@@ -124,12 +148,15 @@ export interface FileRoutesById {
   '/_app/configuracoes': typeof AppConfiguracoesRoute
   '/_app/dashboard': typeof AppDashboardRoute
   '/_app/prontuarios': typeof AppProntuariosRoute
+  '/atividades/$token': typeof AtividadesTokenRoute
   '/formulario/$token': typeof FormularioTokenRoute
   '/_app/': typeof AppIndexRoute
   '/_app/pacientes/$id': typeof AppPacientesIdRoute
   '/_app/prontuario/$id': typeof AppProntuarioIdRoute
+  '/_app/atividades/': typeof AppAtividadesIndexRoute
   '/_app/formularios/': typeof AppFormulariosIndexRoute
   '/_app/pacientes/': typeof AppPacientesIndexRoute
+  '/_app/atividades/$id/edit': typeof AppAtividadesIdEditRoute
   '/_app/formularios/$id/edit': typeof AppFormulariosIdEditRoute
 }
 export interface FileRouteTypes {
@@ -141,11 +168,14 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/dashboard'
     | '/prontuarios'
+    | '/atividades/$token'
     | '/formulario/$token'
     | '/pacientes/$id'
     | '/prontuario/$id'
+    | '/atividades/'
     | '/formularios/'
     | '/pacientes/'
+    | '/atividades/$id/edit'
     | '/formularios/$id/edit'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -154,12 +184,15 @@ export interface FileRouteTypes {
     | '/configuracoes'
     | '/dashboard'
     | '/prontuarios'
+    | '/atividades/$token'
     | '/formulario/$token'
     | '/'
     | '/pacientes/$id'
     | '/prontuario/$id'
+    | '/atividades'
     | '/formularios'
     | '/pacientes'
+    | '/atividades/$id/edit'
     | '/formularios/$id/edit'
   id:
     | '__root__'
@@ -169,12 +202,15 @@ export interface FileRouteTypes {
     | '/_app/configuracoes'
     | '/_app/dashboard'
     | '/_app/prontuarios'
+    | '/atividades/$token'
     | '/formulario/$token'
     | '/_app/'
     | '/_app/pacientes/$id'
     | '/_app/prontuario/$id'
+    | '/_app/atividades/'
     | '/_app/formularios/'
     | '/_app/pacientes/'
+    | '/_app/atividades/$id/edit'
     | '/_app/formularios/$id/edit'
   fileRoutesById: FileRoutesById
 }
@@ -182,6 +218,7 @@ export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
   RedefinirSenhaRoute: typeof RedefinirSenhaRoute
+  AtividadesTokenRoute: typeof AtividadesTokenRoute
   FormularioTokenRoute: typeof FormularioTokenRoute
 }
 
@@ -222,6 +259,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof FormularioTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/atividades/$token': {
+      id: '/atividades/$token'
+      path: '/atividades/$token'
+      fullPath: '/atividades/$token'
+      preLoaderRoute: typeof AtividadesTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/_app/prontuarios': {
       id: '/_app/prontuarios'
       path: '/prontuarios'
@@ -257,6 +301,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppFormulariosIndexRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/atividades/': {
+      id: '/_app/atividades/'
+      path: '/atividades'
+      fullPath: '/atividades/'
+      preLoaderRoute: typeof AppAtividadesIndexRouteImport
+      parentRoute: typeof AppRoute
+    }
     '/_app/prontuario/$id': {
       id: '/_app/prontuario/$id'
       path: '/prontuario/$id'
@@ -278,6 +329,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AppFormulariosIdEditRouteImport
       parentRoute: typeof AppRoute
     }
+    '/_app/atividades/$id/edit': {
+      id: '/_app/atividades/$id/edit'
+      path: '/atividades/$id/edit'
+      fullPath: '/atividades/$id/edit'
+      preLoaderRoute: typeof AppAtividadesIdEditRouteImport
+      parentRoute: typeof AppRoute
+    }
   }
 }
 
@@ -288,8 +346,10 @@ interface AppRouteChildren {
   AppIndexRoute: typeof AppIndexRoute
   AppPacientesIdRoute: typeof AppPacientesIdRoute
   AppProntuarioIdRoute: typeof AppProntuarioIdRoute
+  AppAtividadesIndexRoute: typeof AppAtividadesIndexRoute
   AppFormulariosIndexRoute: typeof AppFormulariosIndexRoute
   AppPacientesIndexRoute: typeof AppPacientesIndexRoute
+  AppAtividadesIdEditRoute: typeof AppAtividadesIdEditRoute
   AppFormulariosIdEditRoute: typeof AppFormulariosIdEditRoute
 }
 
@@ -300,8 +360,10 @@ const AppRouteChildren: AppRouteChildren = {
   AppIndexRoute: AppIndexRoute,
   AppPacientesIdRoute: AppPacientesIdRoute,
   AppProntuarioIdRoute: AppProntuarioIdRoute,
+  AppAtividadesIndexRoute: AppAtividadesIndexRoute,
   AppFormulariosIndexRoute: AppFormulariosIndexRoute,
   AppPacientesIndexRoute: AppPacientesIndexRoute,
+  AppAtividadesIdEditRoute: AppAtividadesIdEditRoute,
   AppFormulariosIdEditRoute: AppFormulariosIdEditRoute,
 }
 
@@ -311,6 +373,7 @@ const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
   RedefinirSenhaRoute: RedefinirSenhaRoute,
+  AtividadesTokenRoute: AtividadesTokenRoute,
   FormularioTokenRoute: FormularioTokenRoute,
 }
 export const routeTree = rootRouteImport

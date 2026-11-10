@@ -1,11 +1,6 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createClient } from "@supabase/supabase-js";
 import { requireAdmin } from "./_lib/requireAdmin.js";
-
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { supabaseAdmin } from "./_lib/supabaseAdmin.js";
 
 const ROLES = ["admin", "psicologo", "psiquiatra", "recepcionista"];
 

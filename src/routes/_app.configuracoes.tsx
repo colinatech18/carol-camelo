@@ -55,6 +55,8 @@ import { useAuth } from "@/lib/auth-context";
 import { getAuthHeader } from "@/lib/authHeader";
 import { getClinicBranding, uploadClinicLogo, removeClinicLogo } from "@/lib/clinicBranding";
 import { ClinicLogo } from "@/components/ClinicLogo";
+import { DEFAULT_CLINICAL_CONFIG } from "@/lib/criticality";
+import { useClinicalConfig } from "@/hooks/useClinicalConfig";
 import { toast } from "sonner";
 import type { Role, User } from "@/types";
 import { supabase } from "@/lib/supabase";
@@ -112,12 +114,14 @@ function SettingsPage() {
             <BrandingCard />
             <TeamCard />
             <DefaultFormCard />
+            <ClinicalConfigCard />
           </TabsContent>
         )}
 
         {user?.role === "admin" && (
           <TabsContent value="integracoes" className="space-y-6">
             <ReminderTemplateCard />
+            <AppointmentMessageCard />
             <WhatsappTemplatesCard />
           </TabsContent>
         )}
@@ -225,8 +229,8 @@ function BrandingCard() {
                 onChange={(e) => handleFile(e.target.files?.[0] ?? null)}
               />
               <p className="text-xs text-muted-foreground">
-                PNG, JPG, SVG ou WEBP · máximo 2MB. Fica visível publicamente (login e formulário
-                do paciente), então evite imagens com dados sensíveis.
+                PNG, JPG, SVG ou WEBP · máximo 2MB. Fica visível publicamente (login e formulário do
+                paciente), então evite imagens com dados sensíveis.
               </p>
               {previewError && <p className="text-xs text-danger">{previewError}</p>}
             </div>
@@ -763,7 +767,9 @@ function DefaultFormCard() {
               <SelectTrigger>
                 <SelectValue
                   placeholder={
-                    activeForms.length ? "Selecione um formulário" : "Nenhum formulário ativo cadastrado"
+                    activeForms.length
+                      ? "Selecione um formulário"
+                      : "Nenhum formulário ativo cadastrado"
                   }
                 />
               </SelectTrigger>
@@ -782,6 +788,167 @@ function DefaultFormCard() {
             </p>
           </div>
           <Button onClick={() => save.mutate()} disabled={!selected || save.isPending}>
+            Salvar
+          </Button>
+        </CardContent>
+      </Card>
+    </SectionRow>
+  );
+}
+
+/* ========================= PARÂMETROS CLÍNICOS ========================= */
+
+function ClinicalConfigCard() {
+  const qc = useQueryClient();
+  const { data: config, isLoading } = useClinicalConfig();
+
+  const [form, setForm] = useState({
+    programLengthDays: String(DEFAULT_CLINICAL_CONFIG.programLengthDays),
+    backfillDays: String(DEFAULT_CLINICAL_CONFIG.backfillDays),
+    noResponseAlertDays: String(DEFAULT_CLINICAL_CONFIG.noResponseAlertDays),
+    criticalityRedMax: String(DEFAULT_CLINICAL_CONFIG.criticalityRedMax),
+    criticalityYellowMax: String(DEFAULT_CLINICAL_CONFIG.criticalityYellowMax),
+  });
+
+  useEffect(() => {
+    if (!config) return;
+    setForm({
+      programLengthDays: String(config.programLengthDays),
+      backfillDays: String(config.backfillDays),
+      noResponseAlertDays: String(config.noResponseAlertDays),
+      criticalityRedMax: String(config.criticalityRedMax),
+      criticalityYellowMax: String(config.criticalityYellowMax),
+    });
+  }, [config]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const programLengthDays = Number(form.programLengthDays);
+      const backfillDays = Number(form.backfillDays);
+      const noResponseAlertDays = Number(form.noResponseAlertDays);
+      const criticalityRedMax = Number(form.criticalityRedMax.replace(",", "."));
+      const criticalityYellowMax = Number(form.criticalityYellowMax.replace(",", "."));
+
+      if (!Number.isFinite(programLengthDays) || programLengthDays <= 0) {
+        throw new Error("Duração do programa precisa ser um número maior que zero");
+      }
+      if (!Number.isFinite(backfillDays) || backfillDays < 0) {
+        throw new Error("Janela de preenchimento retroativo precisa ser um número válido");
+      }
+      if (!Number.isFinite(noResponseAlertDays) || noResponseAlertDays < 0) {
+        throw new Error("Alerta de dias sem resposta precisa ser um número válido");
+      }
+      if (
+        !Number.isFinite(criticalityRedMax) ||
+        !Number.isFinite(criticalityYellowMax) ||
+        criticalityRedMax >= criticalityYellowMax
+      ) {
+        throw new Error("O limiar crítico precisa ser menor que o limiar de atenção");
+      }
+
+      const { error } = await supabase
+        .from("app_settings")
+        .update({
+          program_length_days: programLengthDays,
+          backfill_days: backfillDays,
+          no_response_alert_days: noResponseAlertDays,
+          criticality_red_max: criticalityRedMax,
+          criticality_yellow_max: criticalityYellowMax,
+        })
+        .eq("id", true);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["app-settings", "clinical-config"] });
+      toast.success("Parâmetros clínicos salvos");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
+  });
+
+  return (
+    <SectionRow
+      title="Parâmetros clínicos"
+      description="Regras usadas para calcular o dia do programa, a criticidade e os alertas de acompanhamento."
+    >
+      <Card>
+        <CardContent className="p-6 space-y-4">
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Duração do programa (dias)</Label>
+              <Input
+                type="number"
+                min={1}
+                value={form.programLengthDays}
+                onChange={(e) => setForm({ ...form, programLengthDays: e.target.value })}
+                disabled={isLoading}
+              />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Janela de preenchimento retroativo (dias)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={form.backfillDays}
+                onChange={(e) => setForm({ ...form, backfillDays: e.target.value })}
+                disabled={isLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Até quantos dias atrás o paciente pode preencher um diário que ficou sem resposta.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Alerta de dias sem resposta</Label>
+              <Input
+                type="number"
+                min={0}
+                value={form.noResponseAlertDays}
+                onChange={(e) => setForm({ ...form, noResponseAlertDays: e.target.value })}
+                disabled={isLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                A partir de quantos dias sem resposta o paciente aparece no alerta do dashboard.
+              </p>
+            </div>
+          </div>
+
+          <Separator />
+
+          <div className="grid sm:grid-cols-2 gap-3">
+            <div className="space-y-1.5">
+              <Label>Limiar crítico (vermelho)</Label>
+              <Input
+                type="number"
+                step="0.1"
+                min={1}
+                max={5}
+                value={form.criticalityRedMax}
+                onChange={(e) => setForm({ ...form, criticalityRedMax: e.target.value })}
+                disabled={isLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Média das últimas 3 respostas abaixo deste valor (escala 1–5) marca o paciente como
+                crítico.
+              </p>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Limiar de atenção (amarelo)</Label>
+              <Input
+                type="number"
+                step="0.1"
+                min={1}
+                max={5}
+                value={form.criticalityYellowMax}
+                onChange={(e) => setForm({ ...form, criticalityYellowMax: e.target.value })}
+                disabled={isLoading}
+              />
+              <p className="text-xs text-muted-foreground">
+                Até este valor (e acima do limiar crítico) o paciente aparece como atenção; acima,
+                estável.
+              </p>
+            </div>
+          </div>
+
+          <Button onClick={() => save.mutate()} disabled={save.isPending || isLoading}>
             Salvar
           </Button>
         </CardContent>
@@ -836,7 +1003,12 @@ function ReminderTemplateCard() {
         <CardContent className="p-6 space-y-3">
           <div className="space-y-1.5">
             <Label>Template da mensagem</Label>
-            <Textarea rows={4} value={tpl} onChange={(e) => setTpl(e.target.value)} disabled={isLoading} />
+            <Textarea
+              rows={4}
+              value={tpl}
+              onChange={(e) => setTpl(e.target.value)}
+              disabled={isLoading}
+            />
             <p className="text-xs text-muted-foreground">
               Variáveis disponíveis: <code>{"{{name}}"}</code> (primeiro nome do paciente),{" "}
               <code>{"{{link}}"}</code> (link do formulário).
@@ -851,9 +1023,75 @@ function ReminderTemplateCard() {
   );
 }
 
+/* ============================== CONSULTA AGENDADA (n8n) ============================== */
+
+function AppointmentMessageCard() {
+  const qc = useQueryClient();
+  const { data: settings, isLoading } = useQuery({
+    queryKey: ["app-settings-appointment-message"],
+    queryFn: async () => {
+      const { data, error } = (await supabase
+        .from("app_settings")
+        .select("appointment_message_template")
+        .eq("id", true)
+        .maybeSingle()) as any;
+      if (error) throw error;
+      return { template: (data?.appointment_message_template as string) ?? "" };
+    },
+  });
+
+  const [tpl, setTpl] = useState("");
+  useEffect(() => {
+    if (settings) setTpl(settings.template);
+  }, [settings]);
+
+  const save = useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase
+        .from("app_settings")
+        .update({ appointment_message_template: tpl })
+        .eq("id", true);
+      if (error) throw error;
+    },
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["app-settings-appointment-message"] });
+      toast.success("Template salvo");
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
+  });
+
+  return (
+    <SectionRow
+      title="Mensagem de consulta agendada (texto livre)"
+      description="Enviada automaticamente pro WhatsApp do paciente sempre que uma consulta é marcada na agenda, quando ele está dentro da janela de 24h. Fora da janela, usa o template aprovado selecionado abaixo."
+    >
+      <Card>
+        <CardContent className="p-6 space-y-3">
+          <div className="space-y-1.5">
+            <Label>Template da mensagem</Label>
+            <Textarea
+              rows={4}
+              value={tpl}
+              onChange={(e) => setTpl(e.target.value)}
+              disabled={isLoading}
+            />
+            <p className="text-xs text-muted-foreground">
+              Variáveis disponíveis: <code>{"{{name}}"}</code> (primeiro nome do paciente),{" "}
+              <code>{"{{datetime}}"}</code> (data e hora da consulta).
+            </p>
+          </div>
+          <Button onClick={() => save.mutate()} disabled={save.isPending || isLoading}>
+            Salvar
+          </Button>
+        </CardContent>
+      </Card>
+    </SectionRow>
+  );
+}
+
 /* ==================== TEMPLATES DE WHATSAPP (MODELOS DA META) ==================== */
 
-type TemplateSource = "patient_first_name" | "patient_full_name" | "form_link";
+type TemplateSource = "patient_first_name" | "patient_full_name" | "form_link" | "appointment_datetime";
 
 interface TemplateParam {
   parameter_name: string;
@@ -871,6 +1109,7 @@ const SOURCE_LABEL: Record<TemplateSource, string> = {
   patient_first_name: "Primeiro nome do paciente",
   patient_full_name: "Nome completo do paciente",
   form_link: "Link do formulário",
+  appointment_datetime: "Data/hora da consulta agendada",
 };
 
 const EMPTY_TEMPLATE_FORM = {
@@ -899,11 +1138,15 @@ function WhatsappTemplatesCard() {
     queryFn: async () => {
       const { data, error } = (await supabase
         .from("app_settings")
-        .select("reminder_template_id, reopen_template_id")
+        .select("reminder_template_id, reopen_template_id, appointment_template_id")
         .eq("id", true)
         .maybeSingle()) as any;
       if (error) throw error;
-      return data as { reminder_template_id: string | null; reopen_template_id: string | null };
+      return data as {
+        reminder_template_id: string | null;
+        reopen_template_id: string | null;
+        appointment_template_id: string | null;
+      };
     },
   });
 
@@ -967,7 +1210,10 @@ function WhatsappTemplatesCard() {
   });
 
   const setUsage = useMutation({
-    mutationFn: async (vars: { field: "reminder_template_id" | "reopen_template_id"; templateId: string }) => {
+    mutationFn: async (vars: {
+      field: "reminder_template_id" | "reopen_template_id" | "appointment_template_id";
+      templateId: string;
+    }) => {
       const { error } = await supabase
         .from("app_settings")
         .update({ [vars.field]: vars.templateId })
@@ -1065,7 +1311,9 @@ function WhatsappTemplatesCard() {
               <Label>Usar para lembrete automático (disparo fora da janela de 24h)</Label>
               <Select
                 value={usage?.reminder_template_id ?? ""}
-                onValueChange={(v) => setUsage.mutate({ field: "reminder_template_id", templateId: v })}
+                onValueChange={(v) =>
+                  setUsage.mutate({ field: "reminder_template_id", templateId: v })
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione um template" />
@@ -1083,7 +1331,29 @@ function WhatsappTemplatesCard() {
               <Label>Usar para &quot;Enviar modelo&quot; (reabrir conversa na aba Conversas)</Label>
               <Select
                 value={usage?.reopen_template_id ?? ""}
-                onValueChange={(v) => setUsage.mutate({ field: "reopen_template_id", templateId: v })}
+                onValueChange={(v) =>
+                  setUsage.mutate({ field: "reopen_template_id", templateId: v })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue placeholder="Selecione um template" />
+                </SelectTrigger>
+                <SelectContent>
+                  {templates.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Usar para aviso de consulta agendada (fora da janela de 24h)</Label>
+              <Select
+                value={usage?.appointment_template_id ?? ""}
+                onValueChange={(v) =>
+                  setUsage.mutate({ field: "appointment_template_id", templateId: v })
+                }
               >
                 <SelectTrigger>
                   <SelectValue placeholder="Selecione um template" />

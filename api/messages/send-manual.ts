@@ -1,13 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createClient } from "@supabase/supabase-js";
 import { requireUser } from "../_lib/requireAdmin.js";
 import { internalError } from "../_lib/errorResponse.js";
 import { buildTemplatePayload, renderTextTemplate, type WhatsappTemplateRow } from "../_lib/whatsappTemplate.js";
-
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { supabaseAdmin } from "../_lib/supabaseAdmin.js";
 
 const MAX_MESSAGE_LENGTH = 4096;
 const WINDOW_MS = 24 * 60 * 60 * 1000;

@@ -1,6 +1,11 @@
 export interface TemplateParamConfig {
   parameter_name: string;
-  source: "patient_first_name" | "patient_full_name" | "form_link" | string;
+  source:
+    | "patient_first_name"
+    | "patient_full_name"
+    | "form_link"
+    | "appointment_datetime"
+    | string;
 }
 
 export interface WhatsappTemplateRow {
@@ -24,7 +29,7 @@ export interface WhatsappTemplateRow {
  */
 export function buildTemplatePayload(
   template: WhatsappTemplateRow,
-  ctx: { patientName: string; link: string },
+  ctx: { patientName: string; link?: string; appointmentDateTime?: string },
 ) {
   const parameters = (template.parameters ?? []).map((p) => {
     let text = "";
@@ -36,7 +41,10 @@ export function buildTemplatePayload(
         text = ctx.patientName;
         break;
       case "form_link":
-        text = ctx.link;
+        text = ctx.link ?? "";
+        break;
+      case "appointment_datetime":
+        text = ctx.appointmentDateTime ?? "";
         break;
       default:
         text = "";
@@ -52,13 +60,14 @@ export function buildTemplatePayload(
 }
 
 /** Renderiza o texto legível (usado só pro histórico/log, não pro envio de
- * verdade via template) substituindo {{name}} e {{link}}. */
+ * verdade via template) substituindo {{name}}, {{link}} e {{datetime}}. */
 export function renderTextTemplate(
   bodyTemplateText: string,
-  ctx: { patientName: string; link: string },
+  ctx: { patientName: string; link?: string; appointmentDateTime?: string },
 ): string {
   const firstName = ctx.patientName.trim().split(/\s+/)[0] ?? ctx.patientName;
   return bodyTemplateText
     .replace(/\{\{\s*name\s*\}\}/g, firstName)
-    .replace(/\{\{\s*link\s*\}\}/g, ctx.link);
+    .replace(/\{\{\s*link\s*\}\}/g, ctx.link ?? "")
+    .replace(/\{\{\s*datetime\s*\}\}/g, ctx.appointmentDateTime ?? "");
 }

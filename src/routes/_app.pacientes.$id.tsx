@@ -1,28 +1,66 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { ArrowLeft, Send, Copy, Check, FileText, Pencil, Loader2, MessageSquare, Plus } from "lucide-react";
+import {
+  ArrowLeft,
+  Send,
+  Copy,
+  Check,
+  FileText,
+  Pencil,
+  Loader2,
+  MessageSquare,
+  Plus,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogFooter,
+} from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Calendar } from "@/components/ui/calendar";
 import { CriticalityBadge } from "@/components/CriticalityBadge";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { getAuthHeader } from "@/lib/authHeader";
-import { criticalityFromResponses, programDay, averageOfEntry, brasiliaDateString } from "@/lib/criticality";
+import {
+  criticalityFromResponses,
+  programDay,
+  averageOfEntry,
+  brasiliaDateString,
+  DEFAULT_CLINICAL_CONFIG,
+} from "@/lib/criticality";
+import { useClinicalConfig } from "@/hooks/useClinicalConfig";
 import type { FormField } from "@/lib/forms-store";
 import { cn } from "@/lib/utils";
 import { format, parseISO, isSameDay } from "date-fns";
 import { ptBR } from "date-fns/locale";
-import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, Tooltip, CartesianGrid, Legend } from "recharts";
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  ResponsiveContainer,
+  Tooltip,
+  CartesianGrid,
+  Legend,
+} from "recharts";
 import { toast } from "sonner";
 import type { Patient, ResponseEntry } from "@/types";
 
@@ -35,6 +73,16 @@ const APPT_STATUS_LABEL: Record<string, string> = {
   pending: "Pendente",
   done: "Realizado",
   cancelled: "Cancelado",
+};
+
+const APPOINTMENT_SKIP_REASON_LABEL: Record<string, string> = {
+  no_phone: "Paciente sem WhatsApp cadastrado.",
+  archived: "Paciente está arquivado.",
+  outside_24h_no_template: "Fora da janela de 24h e sem template aprovado configurado em Configurações.",
+  template_not_found: "O template configurado para consulta não foi encontrado.",
+  n8n_error: "Falha ao acionar o envio (n8n indisponível).",
+  integration_not_configured: "Integração de envio não configurada.",
+  settings_error: "Erro ao ler as configurações de envio.",
 };
 
 type EditForm = {
@@ -67,7 +115,11 @@ function formatAnswerValue(field: FormField | undefined, value: unknown): string
     case "checkbox": {
       if (!Array.isArray(value)) return String(value);
       return value
-        .map((v) => (v === OTHER_SENTINEL ? "Outro" : field.options?.find((o) => o.id === v)?.label ?? String(v)))
+        .map((v) =>
+          v === OTHER_SENTINEL
+            ? "Outro"
+            : (field.options?.find((o) => o.id === v)?.label ?? String(v)),
+        )
         .join(", ");
     }
     case "date": {
@@ -90,11 +142,20 @@ function PatientDetail() {
   const { id } = Route.useParams();
   const qc = useQueryClient();
   const { user } = useAuth();
+  const { data: clinicalConfig = DEFAULT_CLINICAL_CONFIG } = useClinicalConfig();
 
-  const { data: patient } = useQuery({
+  const {
+    data: patient,
+    isLoading: patientLoading,
+    isError: patientError,
+  } = useQuery({
     queryKey: ["patient", id],
     queryFn: async () => {
-      const { data, error } = (await supabase.from("patients").select("*").eq("id", id).single()) as any;
+      const { data, error } = (await supabase
+        .from("patients")
+        .select("*")
+        .eq("id", id)
+        .single()) as any;
       if (error) throw error;
       return {
         id: data.id,
@@ -108,18 +169,26 @@ function PatientDetail() {
         assignedFormId: data.assigned_form_id ?? undefined,
       } as Patient;
     },
+    retry: false,
   });
 
   const { data: responses = [] } = useQuery({
     queryKey: ["responses", id],
     queryFn: async () => {
-      const { data, error } = (await supabase.from("form_responses").select("*").eq("patient_id", id)) as any;
+      const { data, error } = (await supabase
+        .from("form_responses")
+        .select("*")
+        .eq("patient_id", id)) as any;
       if (error) throw error;
       return (data ?? []).map((r: any) => ({
         id: r.id,
         patientId: r.patient_id,
         date: r.submitted_at ? brasiliaDateString(r.submitted_at) : "",
-        programDay: programDay(patient?.startDate ?? "", r.submitted_at ? new Date(r.submitted_at) : new Date()),
+        programDay: programDay(
+          patient?.startDate ?? "",
+          r.submitted_at ? new Date(r.submitted_at) : new Date(),
+          clinicalConfig.programLengthDays,
+        ),
         formId: r.form_id ?? undefined,
         answers: (r.responses ?? []) as ResponseEntry["answers"],
         createdAt: r.submitted_at ?? "",
@@ -138,7 +207,10 @@ function PatientDetail() {
   const { data: fieldsByFormId = new Map<string, Map<string, FormField>>() } = useQuery({
     queryKey: ["forms", "fields-by-id", formIds],
     queryFn: async () => {
-      const { data, error } = (await supabase.from("forms").select("id, fields").in("id", formIds)) as any;
+      const { data, error } = (await supabase
+        .from("forms")
+        .select("id, fields")
+        .in("id", formIds)) as any;
       if (error) throw error;
       const map = new Map<string, Map<string, FormField>>();
       (data ?? []).forEach((f: any) => {
@@ -154,7 +226,10 @@ function PatientDetail() {
   const { data: appointments = [] } = useQuery({
     queryKey: ["appointments", id],
     queryFn: async () => {
-      const { data, error } = (await supabase.from("appointments").select("*").eq("patient_id", id)) as any;
+      const { data, error } = (await supabase
+        .from("appointments")
+        .select("*")
+        .eq("patient_id", id)) as any;
       if (error) throw error;
       return (data ?? []) as Array<{
         id: string;
@@ -202,7 +277,7 @@ function PatientDetail() {
   });
 
   const responsible = users.find((u) => u.id === patient?.responsibleId);
-  const crit = criticalityFromResponses(responses);
+  const crit = criticalityFromResponses(responses, clinicalConfig);
 
   const updateStatus = useMutation({
     mutationFn: async (status: "active" | "paused" | "completed") => {
@@ -242,7 +317,11 @@ function PatientDetail() {
       const res = await fetch("/api/messages/send-manual", {
         method: "POST",
         headers: { "Content-Type": "application/json", ...(await getAuthHeader()) },
-        body: JSON.stringify({ patientId: id, message: vars.message, useTemplate: vars.useTemplate }),
+        body: JSON.stringify({
+          patientId: id,
+          message: vars.message,
+          useTemplate: vars.useTemplate,
+        }),
       });
       const body = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(body.error || "Erro ao enviar");
@@ -276,7 +355,7 @@ function PatientDetail() {
       const code = e instanceof Error ? e.message : "";
       if (code === "outside_24h_window") {
         toast.error(
-          "Fora da janela de 24h: o paciente precisa mandar uma mensagem antes de você poder responder livremente. Use \"Enviar modelo\" para reabrir a conversa.",
+          'Fora da janela de 24h: o paciente precisa mandar uma mensagem antes de você poder responder livremente. Use "Enviar modelo" para reabrir a conversa.',
         );
       } else if (code === "no_phone") {
         toast.error("Este paciente não tem telefone cadastrado.");
@@ -338,7 +417,13 @@ function PatientDetail() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao salvar"),
   });
 
-  const COLORS = ["var(--primary)", "var(--success)", "var(--warning)", "var(--danger)", "oklch(0.6 0.15 280)"];
+  const COLORS = [
+    "var(--primary)",
+    "var(--success)",
+    "var(--warning)",
+    "var(--danger)",
+    "oklch(0.6 0.15 280)",
+  ];
 
   const [copied, setCopied] = useState(false);
   const publicLink = patient ? `${window.location.origin}/formulario/${patient.publicToken}` : "";
@@ -363,7 +448,9 @@ function PatientDetail() {
   const appointmentsForSelectedDay = useMemo(
     () =>
       appointments
-        .filter((a) => a.scheduled_at && isSameDay(parseISO(a.scheduled_at as string), selectedDate))
+        .filter(
+          (a) => a.scheduled_at && isSameDay(parseISO(a.scheduled_at as string), selectedDate),
+        )
         .sort((a, b) => (a.scheduled_at ?? "").localeCompare(b.scheduled_at ?? "")),
     [appointments, selectedDate],
   );
@@ -373,20 +460,32 @@ function PatientDetail() {
       const [h, m] = apptForm.time.split(":").map(Number);
       const scheduled = new Date(selectedDate);
       scheduled.setHours(h || 0, m || 0, 0, 0);
-      const { error } = await supabase.from("appointments").insert({
-        patient_id: id,
-        professional_id: apptForm.professionalId || null,
-        scheduled_at: scheduled.toISOString(),
-        status: "pending",
-        notes: apptForm.notes.trim() || null,
+
+      const res = await fetch("/api/appointments/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", ...(await getAuthHeader()) },
+        body: JSON.stringify({
+          patientId: id,
+          professionalId: apptForm.professionalId || null,
+          scheduledAt: scheduled.toISOString(),
+          notes: apptForm.notes.trim() || null,
+        }),
       });
-      if (error) throw error;
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error || "Erro ao agendar");
+      return body as { ok: true; appointmentId: string; messageSent: boolean; skipReason?: string };
     },
-    onSuccess: () => {
+    onSuccess: (result) => {
       qc.invalidateQueries({ queryKey: ["appointments", id] });
       setCreateOpen(false);
       setApptForm({ time: "09:00", professionalId: "", notes: "" });
-      toast.success("Consulta agendada");
+      if (result.messageSent) {
+        toast.success("Consulta agendada e paciente avisado por WhatsApp");
+      } else {
+        toast.warning("Consulta agendada, mas não foi possível avisar o paciente por WhatsApp", {
+          description: APPOINTMENT_SKIP_REASON_LABEL[result.skipReason ?? ""] ?? undefined,
+        });
+      }
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao agendar"),
   });
@@ -403,11 +502,29 @@ function PatientDetail() {
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao atualizar"),
   });
 
-  if (!patient) return <div className="p-8 text-muted-foreground">Carregando…</div>;
+  if (patientError) {
+    return (
+      <div className="p-8 space-y-3">
+        <p className="text-muted-foreground">Paciente não encontrado.</p>
+        <Link
+          to="/pacientes"
+          className="inline-flex items-center text-sm text-primary hover:underline"
+        >
+          <ArrowLeft className="h-4 w-4 mr-1" /> Voltar para Pacientes
+        </Link>
+      </div>
+    );
+  }
+
+  if (!patient || patientLoading)
+    return <div className="p-8 text-muted-foreground">Carregando…</div>;
 
   return (
     <div className="p-6 lg:p-8 space-y-6 max-w-6xl mx-auto">
-      <Link to="/pacientes" className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground">
+      <Link
+        to="/pacientes"
+        className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
+      >
         <ArrowLeft className="h-4 w-4 mr-1" /> Pacientes
       </Link>
 
@@ -422,7 +539,8 @@ function PatientDetail() {
               </div>
               {patient.startDate && (
                 <p className="text-sm text-muted-foreground">
-                  Dia {programDay(patient.startDate)} de 30 · Início{" "}
+                  Dia {programDay(patient.startDate, new Date(), clinicalConfig.programLengthDays)}{" "}
+                  de {clinicalConfig.programLengthDays} · Início{" "}
                   {format(parseISO(patient.startDate), "dd MMM yyyy", { locale: ptBR })}
                 </p>
               )}
@@ -458,7 +576,8 @@ function PatientDetail() {
               </Link>
             </Button>
             <Button variant="outline" onClick={copyLink}>
-              {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />} Link do formulário
+              {copied ? <Check className="h-4 w-4 mr-2" /> : <Copy className="h-4 w-4 mr-2" />} Link
+              do formulário
             </Button>
             <Button onClick={() => sendReminder.mutate()} disabled={sendReminder.isPending}>
               {sendReminder.isPending ? (
@@ -482,20 +601,36 @@ function PatientDetail() {
 
         <TabsContent value="evolution">
           <Card>
-            <CardHeader><CardTitle className="text-base">Evolução ao longo do programa</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-base">Evolução ao longo do programa</CardTitle>
+            </CardHeader>
             <CardContent>
               {responses.length === 0 ? (
-                <p className="text-sm text-muted-foreground py-10 text-center">Ainda sem respostas registradas.</p>
+                <p className="text-sm text-muted-foreground py-10 text-center">
+                  Ainda sem respostas registradas.
+                </p>
               ) : (
                 <div className="h-80">
                   <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={responses.map((r) => ({ day: r.programDay, média: +averageOfEntry(r).toFixed(2) }))} margin={{ left: -10, right: 8, top: 8, bottom: 4 }}>
+                    <LineChart
+                      data={responses.map((r) => {
+                        const avg = averageOfEntry(r);
+                        return { day: r.programDay, média: avg === null ? null : +avg.toFixed(2) };
+                      })}
+                      margin={{ left: -10, right: 8, top: 8, bottom: 4 }}
+                    >
                       <CartesianGrid strokeDasharray="3 3" opacity={0.4} />
                       <XAxis dataKey="day" tick={{ fontSize: 12 }} />
                       <YAxis domain={[1, 5]} tick={{ fontSize: 12 }} />
                       <Tooltip contentStyle={{ borderRadius: 8, fontSize: 12 }} />
                       <Legend wrapperStyle={{ fontSize: 11 }} />
-                      <Line type="monotone" dataKey="média" stroke={COLORS[0]} strokeWidth={3} dot={{ r: 3 }} />
+                      <Line
+                        type="monotone"
+                        dataKey="média"
+                        stroke={COLORS[0]}
+                        strokeWidth={3}
+                        dot={{ r: 3 }}
+                      />
                     </LineChart>
                   </ResponsiveContainer>
                 </div>
@@ -506,43 +641,59 @@ function PatientDetail() {
 
         <TabsContent value="history">
           <Card>
-            <CardHeader><CardTitle className="text-base">Respostas diárias</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-base">Respostas diárias</CardTitle>
+            </CardHeader>
             <CardContent className="space-y-4">
-              {responses.length === 0 && <p className="text-sm text-muted-foreground">Nenhuma resposta ainda.</p>}
-              {[...responses].sort((a, b) => b.programDay - a.programDay).map((r) => {
-                const fieldsById = r.formId ? fieldsByFormId.get(r.formId) : undefined;
-                return (
-                  <div key={r.id} className="rounded-md border p-4 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="text-sm font-medium">Dia {r.programDay} de 30</div>
-                      <div className="text-xs text-muted-foreground">
-                        {r.createdAt ? format(parseISO(r.createdAt), "dd MMM yyyy HH:mm", { locale: ptBR }) : "—"}
+              {responses.length === 0 && (
+                <p className="text-sm text-muted-foreground">Nenhuma resposta ainda.</p>
+              )}
+              {[...responses]
+                .sort((a, b) => b.programDay - a.programDay)
+                .map((r) => {
+                  const fieldsById = r.formId ? fieldsByFormId.get(r.formId) : undefined;
+                  return (
+                    <div key={r.id} className="rounded-md border p-4 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div className="text-sm font-medium">
+                          Dia {r.programDay} de {clinicalConfig.programLengthDays}
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {r.createdAt
+                            ? format(parseISO(r.createdAt), "dd MMM yyyy HH:mm", { locale: ptBR })
+                            : "—"}
+                        </div>
+                      </div>
+                      <div className="grid sm:grid-cols-2 gap-3">
+                        {r.answers.map((a, i) => {
+                          const field = fieldsById?.get(a.questionId);
+                          return (
+                            <div key={i} className="text-sm">
+                              <div className="text-xs text-muted-foreground">
+                                {field?.label ?? a.questionId}
+                              </div>
+                              <div className="font-medium">{formatAnswerValue(field, a.value)}</div>
+                              {a.note && (
+                                <div className="text-xs text-muted-foreground italic mt-0.5">
+                                  &quot;{a.note}&quot;
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
-                    <div className="grid sm:grid-cols-2 gap-3">
-                      {r.answers.map((a, i) => {
-                        const field = fieldsById?.get(a.questionId);
-                        return (
-                          <div key={i} className="text-sm">
-                            <div className="text-xs text-muted-foreground">{field?.label ?? a.questionId}</div>
-                            <div className="font-medium">{formatAnswerValue(field, a.value)}</div>
-                            {a.note && (
-                              <div className="text-xs text-muted-foreground italic mt-0.5">&quot;{a.note}&quot;</div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </div>
-                );
-              })}
+                  );
+                })}
             </CardContent>
           </Card>
         </TabsContent>
 
         <TabsContent value="conversas">
           <Card>
-            <CardHeader><CardTitle className="text-base">Conversas via WhatsApp</CardTitle></CardHeader>
+            <CardHeader>
+              <CardTitle className="text-base">Conversas via WhatsApp</CardTitle>
+            </CardHeader>
             <CardContent className="space-y-4">
               {messages.length === 0 ? (
                 <p className="text-sm text-muted-foreground py-10 text-center flex flex-col items-center gap-2">
@@ -554,7 +705,10 @@ function PatientDetail() {
                   {messages.map((m: any) => {
                     const isInbound = m.direction === "inbound";
                     return (
-                      <div key={m.id} className={cn("flex", isInbound ? "justify-start" : "justify-end")}>
+                      <div
+                        key={m.id}
+                        className={cn("flex", isInbound ? "justify-start" : "justify-end")}
+                      >
                         <div
                           className={cn(
                             "max-w-[75%] rounded-2xl px-4 py-2.5 text-sm",
@@ -573,7 +727,9 @@ function PatientDetail() {
                           >
                             {m._pending
                               ? "Enviando…"
-                              : format(parseISO(m.created_at), "dd MMM yyyy HH:mm", { locale: ptBR })}
+                              : format(parseISO(m.created_at), "dd MMM yyyy HH:mm", {
+                                  locale: ptBR,
+                                })}
                           </p>
                         </div>
                       </div>
@@ -609,8 +765,8 @@ function PatientDetail() {
               </div>
               <div className="flex items-center justify-between gap-2">
                 <p className="text-xs text-muted-foreground">
-                  Texto livre só funciona se o paciente mandou mensagem nas últimas 24h. Enter envia,
-                  Shift+Enter quebra linha.
+                  Texto livre só funciona se o paciente mandou mensagem nas últimas 24h. Enter
+                  envia, Shift+Enter quebra linha.
                 </p>
                 <Button
                   size="sm"
@@ -642,7 +798,8 @@ function PatientDetail() {
                 locale={ptBR}
                 modifiers={{ hasAppointment: appointmentDates }}
                 modifiersClassNames={{
-                  hasAppointment: "font-semibold underline decoration-2 decoration-primary underline-offset-4",
+                  hasAppointment:
+                    "font-semibold underline decoration-2 decoration-primary underline-offset-4",
                 }}
                 className="rounded-md border mx-auto"
               />
@@ -674,11 +831,18 @@ function PatientDetail() {
                               )}
                             >
                               {a.scheduled_at ? format(parseISO(a.scheduled_at), "HH:mm") : "—"}
-                              {prof && <span className="text-muted-foreground font-normal"> · {prof.name}</span>}
+                              {prof && (
+                                <span className="text-muted-foreground font-normal">
+                                  {" "}
+                                  · {prof.name}
+                                </span>
+                              )}
                             </span>
                             <Select
                               value={status}
-                              onValueChange={(v) => updateAppointmentStatus.mutate({ apptId: a.id, status: v })}
+                              onValueChange={(v) =>
+                                updateAppointmentStatus.mutate({ apptId: a.id, status: v })
+                              }
                             >
                               <SelectTrigger className="w-32 h-7 text-xs">
                                 <SelectValue />
@@ -686,7 +850,9 @@ function PatientDetail() {
                               <SelectContent>
                                 <SelectItem value="pending">{APPT_STATUS_LABEL.pending}</SelectItem>
                                 <SelectItem value="done">{APPT_STATUS_LABEL.done}</SelectItem>
-                                <SelectItem value="cancelled">{APPT_STATUS_LABEL.cancelled}</SelectItem>
+                                <SelectItem value="cancelled">
+                                  {APPT_STATUS_LABEL.cancelled}
+                                </SelectItem>
                               </SelectContent>
                             </Select>
                           </div>
@@ -755,8 +921,12 @@ function PatientDetail() {
                 <Button variant="ghost" onClick={() => setCreateOpen(false)}>
                   Cancelar
                 </Button>
-                <Button onClick={() => createAppointment.mutate()} disabled={createAppointment.isPending}>
-                  {createAppointment.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Agendar
+                <Button
+                  onClick={() => createAppointment.mutate()}
+                  disabled={createAppointment.isPending}
+                >
+                  {createAppointment.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />}{" "}
+                  Agendar
                 </Button>
               </DialogFooter>
             </DialogContent>
@@ -772,24 +942,44 @@ function PatientDetail() {
           <div className="grid sm:grid-cols-2 gap-3">
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Nome</Label>
-              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+              <Input
+                value={form.name}
+                onChange={(e) => setForm({ ...form, name: e.target.value })}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>E-mail</Label>
-              <Input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+              <Input
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>WhatsApp</Label>
-              <Input placeholder="+55..." value={form.whatsapp} onChange={(e) => setForm({ ...form, whatsapp: e.target.value })} />
+              <Input
+                placeholder="+55..."
+                value={form.whatsapp}
+                onChange={(e) => setForm({ ...form, whatsapp: e.target.value })}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Início do programa</Label>
-              <Input type="date" value={form.startDate} onChange={(e) => setForm({ ...form, startDate: e.target.value })} />
+              <Input
+                type="date"
+                value={form.startDate}
+                onChange={(e) => setForm({ ...form, startDate: e.target.value })}
+              />
             </div>
             <div className="space-y-1.5">
               <Label>Status</Label>
-              <Select value={form.status} onValueChange={(v) => setForm({ ...form, status: v as EditForm["status"] })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={form.status}
+                onValueChange={(v) => setForm({ ...form, status: v as EditForm["status"] })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="active">Ativo</SelectItem>
                   <SelectItem value="paused">Pausado</SelectItem>
@@ -799,17 +989,30 @@ function PatientDetail() {
             </div>
             <div className="space-y-1.5 sm:col-span-2">
               <Label>Profissional responsável</Label>
-              <Select value={form.responsibleId} onValueChange={(v) => setForm({ ...form, responsibleId: v })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={form.responsibleId}
+                onValueChange={(v) => setForm({ ...form, responsibleId: v })}
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
-                  {users.map((u) => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                  {users.map((u) => (
+                    <SelectItem key={u.id} value={u.id}>
+                      {u.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
-            <Button variant="ghost" onClick={() => setEditOpen(false)}>Cancelar</Button>
-            <Button onClick={() => saveEdit.mutate()} disabled={saveEdit.isPending}>Salvar</Button>
+            <Button variant="ghost" onClick={() => setEditOpen(false)}>
+              Cancelar
+            </Button>
+            <Button onClick={() => saveEdit.mutate()} disabled={saveEdit.isPending}>
+              Salvar
+            </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>

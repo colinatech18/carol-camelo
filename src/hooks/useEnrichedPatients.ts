@@ -1,3 +1,4 @@
+import { useMemo } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import {
@@ -5,7 +6,9 @@ import {
   criticalityFromResponses,
   daysSinceLastResponse,
   programDay,
+  DEFAULT_CLINICAL_CONFIG,
 } from "@/lib/criticality";
+import { useClinicalConfig } from "@/hooks/useClinicalConfig";
 import type { Patient, ResponseEntry } from "@/types";
 
 export interface EnrichedPatient extends Patient {
@@ -26,10 +29,11 @@ export interface EnrichedPatient extends Patient {
  */
 export function useEnrichedPatients(opts: { includeArchived?: boolean } = {}) {
   const includeArchived = opts.includeArchived ?? false;
+  const { data: config = DEFAULT_CLINICAL_CONFIG } = useClinicalConfig();
 
-  return useQuery({
-    queryKey: ["patients", "enriched", includeArchived ? "all" : "active"],
-    queryFn: async (): Promise<EnrichedPatient[]> => {
+  const rawQuery = useQuery({
+    queryKey: ["patients", "enriched-raw", includeArchived ? "all" : "active"],
+    queryFn: async () => {
       let query = supabase.from("patients").select("*").order("name");
       if (!includeArchived) {
         query = query.is("archived_at", null);
@@ -42,49 +46,62 @@ export function useEnrichedPatients(opts: { includeArchived?: boolean } = {}) {
         .select("*")) as any;
       if (rErr) throw rErr;
 
-      return (patients ?? []).map((p: any) => {
-        const resp: ResponseEntry[] = (responses ?? [])
-          .filter((r: any) => r.patient_id === p.id)
-          .map((r: any) => {
-            const submitted = r.submitted_at ? new Date(r.submitted_at) : null;
-            return {
-              id: r.id,
-              patientId: r.patient_id,
-              // Dia da resposta no horário de Brasília (não UTC): quem responde
-              // depois das 21h continua com a resposta no dia certo.
-              date: submitted ? brasiliaDateString(submitted) : "",
-              // Dia do programa NA DATA DA RESPOSTA — antes usava "hoje" e todas
-              // as respostas apareciam como o mesmo dia.
-              programDay: programDay(p.program_start_date, submitted ?? new Date()),
-              formId: r.form_id ?? undefined,
-              // O jsonb já vem no formato { questionId, value, note?, isScale? }
-              // gravado por api/forms/submit.ts — não precisa reshape aqui.
-              answers: (r.responses ?? []) as ResponseEntry["answers"],
-              createdAt: r.submitted_at ?? "",
-            };
-          });
-
-        const patient: Patient = {
-          id: p.id,
-          name: p.name,
-          email: p.email ?? "",
-          whatsapp: p.phone ?? "",
-          startDate: p.program_start_date ?? "",
-          responsibleId: p.responsible_id ?? "",
-          status: p.status ?? "active",
-          publicToken: p.public_token ?? "",
-          assignedFormId: p.assigned_form_id ?? undefined,
-        };
-
-        return {
-          ...patient,
-          responses: resp,
-          criticality: criticalityFromResponses(resp),
-          daysSinceLast: daysSinceLastResponse(resp),
-          programDay: programDay(p.program_start_date),
-          archivedAt: p.archived_at ?? null,
-        };
-      });
+      return { patients: (patients ?? []) as any[], responses: (responses ?? []) as any[] };
     },
   });
+
+  const data = useMemo((): EnrichedPatient[] | undefined => {
+    if (!rawQuery.data) return undefined;
+    const { patients, responses } = rawQuery.data;
+
+    return patients.map((p) => {
+      const resp: ResponseEntry[] = responses
+        .filter((r) => r.patient_id === p.id)
+        .map((r) => {
+          const submitted = r.submitted_at ? new Date(r.submitted_at) : null;
+          return {
+            id: r.id,
+            patientId: r.patient_id,
+            // Dia da resposta no horário de Brasília (não UTC): quem responde
+            // depois das 21h continua com a resposta no dia certo.
+            date: submitted ? brasiliaDateString(submitted) : "",
+            // Dia do programa NA DATA DA RESPOSTA — antes usava "hoje" e todas
+            // as respostas apareciam como o mesmo dia.
+            programDay: programDay(
+              p.program_start_date,
+              submitted ?? new Date(),
+              config.programLengthDays,
+            ),
+            formId: r.form_id ?? undefined,
+            // O jsonb já vem no formato { questionId, value, note?, isScale? }
+            // gravado por api/forms/submit.ts — não precisa reshape aqui.
+            answers: (r.responses ?? []) as ResponseEntry["answers"],
+            createdAt: r.submitted_at ?? "",
+          };
+        });
+
+      const patient: Patient = {
+        id: p.id,
+        name: p.name,
+        email: p.email ?? "",
+        whatsapp: p.phone ?? "",
+        startDate: p.program_start_date ?? "",
+        responsibleId: p.responsible_id ?? "",
+        status: p.status ?? "active",
+        publicToken: p.public_token ?? "",
+        assignedFormId: p.assigned_form_id ?? undefined,
+      };
+
+      return {
+        ...patient,
+        responses: resp,
+        criticality: criticalityFromResponses(resp, config),
+        daysSinceLast: daysSinceLastResponse(resp),
+        programDay: programDay(patient.startDate, new Date(), config.programLengthDays),
+        archivedAt: p.archived_at ?? null,
+      };
+    });
+  }, [rawQuery.data, config]);
+
+  return { ...rawQuery, data };
 }

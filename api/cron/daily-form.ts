@@ -1,17 +1,16 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createClient } from "@supabase/supabase-js";
 import { internalError } from "../_lib/errorResponse.js";
 import { dispatchReminders, type DispatchResult } from "../_lib/dispatchReminders.js";
-
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { supabaseAdmin } from "../_lib/supabaseAdmin.js";
+import { brasiliaDayStartIso } from "../../src/lib/criticality.js";
 
 // O n8n só responde quando termina de enviar todos os pacientes do lote, então
 // lotes menores + timeout maior evitam estourar a espera em listas grandes.
-const BATCH_SIZE = 25;
-const BATCH_TIMEOUT_MS = 45_000;
+// Configuráveis por env var pra ajustar sem precisar de deploy conforme a
+// base de pacientes cresce (hoje todo paciente ativo recebe o lembrete todo
+// dia, então o volume só tende a subir).
+const BATCH_SIZE = Number(process.env.REMINDER_BATCH_SIZE) || 25;
+const BATCH_TIMEOUT_MS = Number(process.env.REMINDER_BATCH_TIMEOUT_MS) || 45_000;
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (req.method !== "POST" && req.method !== "GET") {
@@ -45,15 +44,12 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   // Quem já respondeu hoje não precisa receber de novo (é 1 resposta por dia).
-  // "Hoje" no horário de Brasília (UTC-3, sem horário de verão desde 2019), a
-  // mesma janela da constraint form_responses_patient_date_uniq. Contar o dia
-  // em UTC fazia quem respondeu depois das 21h de ontem parecer "já respondeu
-  // hoje" e ficar sem o disparo da manhã.
-  const BRT_OFFSET_HOURS = 3;
-  const brtNow = new Date(Date.now() - BRT_OFFSET_HOURS * 60 * 60 * 1000);
-  const dayStart = new Date(
-    Date.UTC(brtNow.getUTCFullYear(), brtNow.getUTCMonth(), brtNow.getUTCDate(), BRT_OFFSET_HOURS),
-  ).toISOString();
+  // "Hoje" no horário de Brasília, a mesma janela da constraint
+  // form_responses_patient_date_uniq. Contar o dia em UTC fazia quem respondeu
+  // depois das 21h de ontem parecer "já respondeu hoje" e ficar sem o disparo
+  // da manhã. Usa a mesma fonte de verdade de `src/lib/criticality.ts` em vez
+  // de reimplementar o offset aqui — as duas contas não podem divergir.
+  const dayStart = brasiliaDayStartIso();
 
   const { data: todays, error: todaysError } = await supabaseAdmin
     .from("form_responses")
@@ -78,7 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     } catch (e) {
       // Um lote falhar não pode impedir os outros de saírem.
       failedBatches += 1;
-      console.error("[cron/daily-form] lote falhou", e);
+      console.error("[cron/daily-form:batch]", e);
     }
   }
 

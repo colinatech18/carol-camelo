@@ -1,62 +1,22 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Check, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
-import { Textarea } from "@/components/ui/textarea";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Checkbox } from "@/components/ui/checkbox";
-import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ClinicLogo } from "@/components/ClinicLogo";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
+import { brasiliaDateString } from "@/lib/criticality";
+import {
+  FieldBlock,
+  CenteredMessage,
+  isAnswerable,
+  isEmpty,
+  type FormField,
+} from "@/components/PublicFormFields";
 
 export const Route = createFileRoute("/formulario/$token")({ component: PublicForm });
-
-type FieldType =
-  | "short_text"
-  | "long_text"
-  | "number"
-  | "date"
-  | "time"
-  | "checkbox"
-  | "radio"
-  | "dropdown"
-  | "scale"
-  | "emoji_scale"
-  | "money"
-  | "url"
-  | "section"
-  | "instruction";
-
-interface FieldOption {
-  id: string;
-  label: string;
-}
-
-interface FormField {
-  id: string;
-  type: FieldType;
-  label: string;
-  description?: string;
-  required?: boolean;
-  allowComment?: boolean;
-  placeholder?: string;
-  maxLength?: number;
-  min?: number;
-  max?: number;
-  currency?: string;
-  minLabel?: string;
-  maxLabel?: string;
-  showNumbers?: boolean;
-  options?: FieldOption[];
-  maxSelections?: number;
-  dateMin?: string;
-  dateMax?: string;
-}
 
 interface PublicFormDef {
   id: string;
@@ -65,11 +25,29 @@ interface PublicFormDef {
   fields: FormField[];
 }
 
+interface OpenDay {
+  date: string;
+  programDay: number;
+}
+
 interface PublicPatient {
   patientId: string;
   name: string;
   programDay: number;
+  openDays: OpenDay[];
   form: PublicFormDef;
+}
+
+/** "Hoje" / "Ontem" / "dd/mm" — por comparação de string, não de Date, pra não
+ * reintroduzir um cálculo de fuso horário no cliente. */
+function dayLabel(dateStr: string, todayStr: string): string {
+  if (dateStr === todayStr) return "Hoje";
+  const [y, m, d] = todayStr.split("-").map(Number);
+  const yesterday = new Date(Date.UTC(y, m - 1, d - 1));
+  const yesterdayStr = `${yesterday.getUTCFullYear()}-${String(yesterday.getUTCMonth() + 1).padStart(2, "0")}-${String(yesterday.getUTCDate()).padStart(2, "0")}`;
+  if (dateStr === yesterdayStr) return "Ontem";
+  const [, mm, dd] = dateStr.split("-");
+  return `${dd}/${mm}`;
 }
 
 async function fetchPublicPatient(token: string): Promise<PublicPatient> {
@@ -84,14 +62,6 @@ async function fetchPublicPatient(token: string): Promise<PublicPatient> {
   return (await res.json()) as PublicPatient;
 }
 
-function isAnswerable(type: FieldType) {
-  return type !== "section" && type !== "instruction";
-}
-
-function isEmpty(v: unknown) {
-  return v === undefined || v === null || v === "" || (Array.isArray(v) && v.length === 0);
-}
-
 function PublicForm() {
   const { token } = Route.useParams();
   const { data, isLoading, error } = useQuery({
@@ -104,10 +74,20 @@ function PublicForm() {
   const [notes, setNotes] = useState<Record<string, string>>({});
   const [done, setDone] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [selectedDay, setSelectedDay] = useState<string | null>(null);
+
+  useEffect(() => {
+    // Seleciona o dia mais recente em aberto por padrão (hoje, se ainda não
+    // respondido; senão o dia faltante mais recente).
+    if (data && data.openDays.length > 0 && selectedDay === null) {
+      setSelectedDay(data.openDays[data.openDays.length - 1].date);
+    }
+  }, [data, selectedDay]);
 
   const submit = useMutation({
     mutationFn: async () => {
       if (!data) throw new Error("Formulário não carregado");
+      if (!selectedDay) throw new Error("Selecione o dia que está respondendo");
       const answerable = data.form.fields.filter((f) => isAnswerable(f.type));
 
       for (const f of answerable) {
@@ -128,9 +108,9 @@ function PublicForm() {
       const res = await fetch("/api/forms/submit", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ token, answers: entries }),
+        body: JSON.stringify({ token, answers: entries, answerDate: selectedDay }),
       });
-      if (res.status === 409) throw new Error("Você já enviou suas respostas hoje.");
+      if (res.status === 409) throw new Error("Você já enviou as respostas desse dia.");
       if (!res.ok) {
         const body = await res.json().catch(() => ({}));
         throw new Error(body.error || "Erro ao enviar");
@@ -157,8 +137,27 @@ function PublicForm() {
     );
   }
 
-  const { name, programDay, form } = data;
+  const { name, form, openDays } = data;
   const firstName = name.split(" ")[0];
+  const todayStr = brasiliaDateString();
+  const selected = openDays.find((d) => d.date === selectedDay) ?? null;
+  const programDay = selected?.programDay ?? data.programDay;
+
+  if (openDays.length === 0 && !done) {
+    return (
+      <CenteredMessage>
+        <div className="text-center space-y-3">
+          <div className="inline-flex h-12 w-12 items-center justify-center rounded-full bg-success/20 text-success-foreground">
+            <Check className="h-6 w-6" />
+          </div>
+          <h2 className="text-xl font-semibold">Tudo em dia, {firstName}!</h2>
+          <p className="text-sm text-muted-foreground max-w-xs">
+            Você já respondeu o diário dos últimos dias. Volte amanhã pra continuar.
+          </p>
+        </div>
+      </CenteredMessage>
+    );
+  }
 
   if (done)
     return (
@@ -194,10 +193,39 @@ function PublicForm() {
         </header>
 
         <Card>
-          <CardContent className="p-6 space-y-1">
-            <p className="text-sm text-muted-foreground">Olá, {firstName} 👋</p>
-            <h1 className="text-xl font-semibold">Dia {programDay} de 30</h1>
-            {form.description && <p className="text-sm text-muted-foreground">{form.description}</p>}
+          <CardContent className="p-6 space-y-3">
+            <div className="space-y-1">
+              <p className="text-sm text-muted-foreground">Olá, {firstName} 👋</p>
+              <h1 className="text-xl font-semibold">Dia {programDay} de 30</h1>
+              {form.description && (
+                <p className="text-sm text-muted-foreground">{form.description}</p>
+              )}
+            </div>
+
+            {openDays.length > 1 && (
+              <div className="space-y-1.5 pt-1">
+                <p className="text-xs text-muted-foreground">
+                  Você ainda não respondeu em {openDays.length} dias. Escolha qual está preenchendo:
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {openDays.map((d) => (
+                    <button
+                      type="button"
+                      key={d.date}
+                      onClick={() => setSelectedDay(d.date)}
+                      className={cn(
+                        "rounded-full border px-3 py-1.5 text-xs font-medium transition",
+                        d.date === selectedDay
+                          ? "bg-primary text-primary-foreground border-primary"
+                          : "bg-background hover:bg-muted",
+                      )}
+                    >
+                      {dayLabel(d.date, todayStr)}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </CardContent>
         </Card>
 
@@ -214,255 +242,15 @@ function PublicForm() {
 
         {formError && <p className="text-sm text-danger">{formError}</p>}
 
-        <Button className="w-full" size="lg" onClick={() => submit.mutate()} disabled={submit.isPending}>
+        <Button
+          className="w-full"
+          size="lg"
+          onClick={() => submit.mutate()}
+          disabled={submit.isPending}
+        >
           {submit.isPending && <Loader2 className="h-4 w-4 mr-2 animate-spin" />} Enviar respostas
         </Button>
       </div>
-    </div>
-  );
-}
-
-function FieldBlock({
-  field,
-  value,
-  note,
-  onChange,
-  onNoteChange,
-}: {
-  field: FormField;
-  value: unknown;
-  note: string;
-  onChange: (v: unknown) => void;
-  onNoteChange: (n: string) => void;
-}) {
-  if (field.type === "section") {
-    return (
-      <div className="pt-2">
-        <h2 className="text-base font-semibold">{field.label}</h2>
-        {field.description && <p className="text-sm text-muted-foreground mt-1">{field.description}</p>}
-      </div>
-    );
-  }
-  if (field.type === "instruction") {
-    return (
-      <Card className="bg-muted/40 border-dashed">
-        <CardContent className="p-4 text-sm text-muted-foreground">{field.label}</CardContent>
-      </Card>
-    );
-  }
-
-  return (
-    <Card>
-      <CardContent className="p-6 space-y-3">
-        <h3 className="text-sm font-medium">
-          {field.label}
-          {field.required && <span className="text-danger"> *</span>}
-        </h3>
-        {field.description && <p className="text-xs text-muted-foreground">{field.description}</p>}
-
-        <FieldInput field={field} value={value} onChange={onChange} />
-
-        {field.allowComment && (
-          <Textarea
-            rows={2}
-            placeholder="Quer comentar algo? (opcional)"
-            value={note}
-            onChange={(e) => onNoteChange(e.target.value)}
-          />
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function FieldInput({
-  field,
-  value,
-  onChange,
-}: {
-  field: FormField;
-  value: unknown;
-  onChange: (v: unknown) => void;
-}) {
-  switch (field.type) {
-    case "scale": {
-      const min = field.min ?? 1;
-      const max = field.max ?? 5;
-      const options = Array.from({ length: max - min + 1 }, (_, i) => min + i);
-      return (
-        <div className="space-y-2">
-          <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0,1fr))` }}>
-            {options.map((n) => (
-              <button
-                type="button"
-                key={n}
-                onClick={() => onChange(n)}
-                className={cn(
-                  "rounded-md border py-3 text-sm font-medium transition",
-                  value === n ? "bg-primary text-primary-foreground border-primary" : "bg-background hover:bg-muted",
-                )}
-              >
-                {field.showNumbers === false ? "" : n}
-              </button>
-            ))}
-          </div>
-          {(field.minLabel || field.maxLabel) && (
-            <div className="flex justify-between text-xs text-muted-foreground">
-              <span>{field.minLabel}</span>
-              <span>{field.maxLabel}</span>
-            </div>
-          )}
-        </div>
-      );
-    }
-    case "emoji_scale": {
-      const opts = field.options ?? [];
-      return (
-        <div className="grid gap-2" style={{ gridTemplateColumns: `repeat(${opts.length || 5}, minmax(0,1fr))` }}>
-          {opts.map((o, idx) => (
-            <button
-              type="button"
-              key={o.id}
-              onClick={() => onChange(idx + 1)}
-              className={cn(
-                "rounded-md border py-3 text-xl transition",
-                value === idx + 1 ? "bg-primary/10 border-primary" : "bg-background hover:bg-muted",
-              )}
-            >
-              {o.label}
-            </button>
-          ))}
-        </div>
-      );
-    }
-    case "short_text":
-      return (
-        <Input
-          value={(value as string) ?? ""}
-          placeholder={field.placeholder}
-          maxLength={field.maxLength}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      );
-    case "long_text":
-      return (
-        <Textarea
-          rows={3}
-          value={(value as string) ?? ""}
-          placeholder={field.placeholder}
-          maxLength={field.maxLength}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      );
-    case "number":
-      return (
-        <Input
-          type="number"
-          value={(value as number) ?? ""}
-          min={field.min}
-          max={field.max}
-          onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
-        />
-      );
-    case "money":
-      return (
-        <div className="relative">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-sm text-muted-foreground">
-            {field.currency ?? "BRL"}
-          </span>
-          <Input
-            type="number"
-            className="pl-14"
-            value={(value as number) ?? ""}
-            min={0}
-            onChange={(e) => onChange(e.target.value === "" ? undefined : Number(e.target.value))}
-          />
-        </div>
-      );
-    case "url":
-      return (
-        <Input
-          type="url"
-          placeholder="https://…"
-          value={(value as string) ?? ""}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      );
-    case "date":
-      return (
-        <Input
-          type="date"
-          value={(value as string) ?? ""}
-          min={field.dateMin}
-          max={field.dateMax}
-          onChange={(e) => onChange(e.target.value)}
-        />
-      );
-    case "time":
-      return <Input type="time" value={(value as string) ?? ""} onChange={(e) => onChange(e.target.value)} />;
-    case "radio":
-      return (
-        <RadioGroup value={(value as string) ?? ""} onValueChange={onChange} className="space-y-2">
-          {(field.options ?? []).map((o) => (
-            <div key={o.id} className="flex items-center gap-2">
-              <RadioGroupItem id={`${field.id}-${o.id}`} value={o.id} />
-              <Label htmlFor={`${field.id}-${o.id}`} className="font-normal cursor-pointer">
-                {o.label}
-              </Label>
-            </div>
-          ))}
-        </RadioGroup>
-      );
-    case "dropdown":
-      return (
-        <Select value={(value as string) ?? ""} onValueChange={onChange}>
-          <SelectTrigger>
-            <SelectValue placeholder="Selecione…" />
-          </SelectTrigger>
-          <SelectContent>
-            {(field.options ?? []).map((o) => (
-              <SelectItem key={o.id} value={o.id}>
-                {o.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      );
-    case "checkbox": {
-      const selected = Array.isArray(value) ? (value as string[]) : [];
-      return (
-        <div className="space-y-2">
-          {(field.options ?? []).map((o) => {
-            const checked = selected.includes(o.id);
-            return (
-              <div key={o.id} className="flex items-center gap-2">
-                <Checkbox
-                  id={`${field.id}-${o.id}`}
-                  checked={checked}
-                  onCheckedChange={(v) => {
-                    const next = v ? [...selected, o.id] : selected.filter((s) => s !== o.id);
-                    if (field.maxSelections && next.length > field.maxSelections) return;
-                    onChange(next);
-                  }}
-                />
-                <Label htmlFor={`${field.id}-${o.id}`} className="font-normal cursor-pointer">
-                  {o.label}
-                </Label>
-              </div>
-            );
-          })}
-        </div>
-      );
-    }
-    default:
-      return null;
-  }
-}
-
-function CenteredMessage({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="min-h-screen flex items-center justify-center p-6 text-muted-foreground text-center">
-      {children}
     </div>
   );
 }

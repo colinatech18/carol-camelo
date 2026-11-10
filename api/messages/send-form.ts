@@ -1,13 +1,8 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createClient } from "@supabase/supabase-js";
 import { requireUser } from "../_lib/requireAdmin.js";
 import { internalError } from "../_lib/errorResponse.js";
-import { dispatchReminders } from "../_lib/dispatchReminders.js";
-
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { dispatchReminders, DispatchError } from "../_lib/dispatchReminders.js";
+import { supabaseAdmin } from "../_lib/supabaseAdmin.js";
 
 const MAX_PATIENTS_PER_REQUEST = 200;
 
@@ -35,11 +30,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const result = await dispatchReminders(patientIds);
     return res.status(200).json(result);
   } catch (e) {
-    if (e instanceof Error && e.message.startsWith("Falha ao acionar")) {
-      return res.status(502).json({ error: e.message });
-    }
-    if (e instanceof Error && e.message.startsWith("Integração de envio")) {
-      return res.status(500).json({ error: e.message });
+    if (e instanceof DispatchError) {
+      return res.status(e.code === "upstream" ? 502 : 500).json({ error: e.message });
     }
     return internalError(res, "messages/send-form", e);
   }

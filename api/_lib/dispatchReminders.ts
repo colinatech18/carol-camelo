@@ -1,10 +1,5 @@
-import { createClient } from "@supabase/supabase-js";
 import { buildTemplatePayload, renderTextTemplate, type WhatsappTemplateRow } from "./whatsappTemplate.js";
-
-const supabaseAdmin = createClient(
-  process.env.SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!,
-);
+import { supabaseAdmin } from "./supabaseAdmin.js";
 
 const MAX_PATIENTS_PER_REQUEST = 200;
 const N8N_CALL_TIMEOUT_MS = 10_000;
@@ -14,8 +9,28 @@ const WINDOW_MS = 24 * 60 * 60 * 1000;
 export type SkipReason = "not_found" | "archived" | "no_phone" | "no_token" | "no_template";
 
 export interface DispatchResult {
+  /**
+   * Quantos pacientes foram aceitos pelo n8n para envio — NÃO é confirmação
+   * de entrega. O webhook responde 200 quando recebe o lote, não quando cada
+   * mensagem chega no WhatsApp; uma falha de entrega individual no provedor
+   * não é refletida aqui.
+   */
   sent: number;
   skipped: Array<{ patientId: string; reason: SkipReason }>;
+}
+
+/**
+ * Erro com `code` pra quem chama decidir o status HTTP sem precisar
+ * inspecionar a mensagem (`e.message.startsWith(...)`), que é frágil e some
+ * de sincronia se o texto mudar.
+ */
+export class DispatchError extends Error {
+  code: "config" | "upstream";
+  constructor(message: string, code: "config" | "upstream") {
+    super(message);
+    this.name = "DispatchError";
+    this.code = code;
+  }
 }
 
 /**
@@ -38,7 +53,10 @@ export async function dispatchReminders(
   const secret = process.env.N8N_SEND_WEBHOOK_SECRET;
   const appUrl = process.env.PUBLIC_APP_URL;
   if (!webhookUrl || !secret || !appUrl) {
-    throw new Error("Integração de envio não configurada (N8N_SEND_WEBHOOK_URL/SECRET/PUBLIC_APP_URL)");
+    throw new DispatchError(
+      "Integração de envio não configurada (N8N_SEND_WEBHOOK_URL/SECRET/PUBLIC_APP_URL)",
+      "config",
+    );
   }
 
   const patientIds = patientIdsInput.slice(0, MAX_PATIENTS_PER_REQUEST);
@@ -155,7 +173,7 @@ export async function dispatchReminders(
   if (!n8nRes.ok) {
     const text = await n8nRes.text().catch(() => "");
     console.error("[dispatchReminders] n8n respondeu com erro", n8nRes.status, text);
-    throw new Error("Falha ao acionar o envio (n8n indisponível)");
+    throw new DispatchError("Falha ao acionar o envio (n8n indisponível)", "upstream");
   }
 
   return { sent: finalReady.length, skipped };

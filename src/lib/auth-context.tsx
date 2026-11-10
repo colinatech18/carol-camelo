@@ -1,13 +1,6 @@
-import {
-  createContext,
-  useCallback,
-  useContext,
-  useEffect,
-  useRef,
-  useState,
-  type ReactNode,
-} from "react";
+import { createContext, useContext, useEffect, type ReactNode } from "react";
 import { supabase } from "@/lib/supabase";
+import { useProfileLoader } from "@/lib/useProfileLoader";
 import type { User } from "@/types";
 
 interface AuthCtx {
@@ -19,54 +12,10 @@ interface AuthCtx {
 
 const Ctx = createContext<AuthCtx | null>(null);
 
-async function fetchProfile(id: string): Promise<User | null> {
-  const { data, error } = (await supabase
-    .from("profiles")
-    .select("*")
-    .eq("id", id)
-    .single()) as any;
-  if (error || !data) return null;
-  return { id: data.id, name: data.name, email: data.email, role: data.role };
-}
-
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<User | null>(null);
-  const [loading, setLoading] = useState(true);
-  const mounted = useRef(true);
-  // Busca de perfil em andamento (ou já concluída) por usuário — evita buscar o
-  // perfil de novo a cada evento da mesma sessão (renovação de token, foco da aba).
-  const inflight = useRef<{ id: string; promise: Promise<void> } | null>(null);
-
-  const loadProfile = useCallback((id: string): Promise<void> => {
-    if (inflight.current?.id === id) return inflight.current.promise;
-
-    const promise = (async () => {
-      let profile: User | null = null;
-      try {
-        profile = await fetchProfile(id);
-      } catch (e) {
-        console.error("Erro ao carregar o perfil", e);
-      }
-      // Falhou: libera pra uma próxima tentativa em vez de travar em "sem perfil".
-      if (!profile && inflight.current?.id === id) inflight.current = null;
-      if (!mounted.current) return;
-      setUser(profile);
-      setLoading(false);
-    })();
-
-    inflight.current = { id, promise };
-    return promise;
-  }, []);
-
-  const clear = useCallback(() => {
-    inflight.current = null;
-    setUser(null);
-    setLoading(false);
-  }, []);
+  const { user, loading, load: loadProfile, clear } = useProfileLoader();
 
   useEffect(() => {
-    mounted.current = true;
-
     // IMPORTANTE: este callback NÃO pode fazer await em outra chamada do Supabase
     // (como buscar o perfil). A biblioteca segura uma trava interna enquanto roda
     // o callback, e qualquer consulta ao banco precisa dessa mesma trava: as duas
@@ -93,7 +42,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     });
 
     return () => {
-      mounted.current = false;
       subscription.unsubscribe();
     };
   }, [loadProfile, clear]);
