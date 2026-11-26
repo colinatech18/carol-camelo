@@ -7,6 +7,7 @@ import {
   Copy,
   Check,
   FileText,
+  FileDown,
   Pencil,
   Loader2,
   MessageSquare,
@@ -39,6 +40,7 @@ import { CriticalityBadge } from "@/components/CriticalityBadge";
 import { supabase } from "@/lib/supabase";
 import { useAuth } from "@/lib/auth-context";
 import { getAuthHeader } from "@/lib/authHeader";
+import { getClinicBranding } from "@/lib/clinicBranding";
 import {
   criticalityFromResponses,
   programDay,
@@ -46,7 +48,15 @@ import {
   brasiliaDateString,
   DEFAULT_CLINICAL_CONFIG,
 } from "@/lib/criticality";
+import {
+  buildReportChartPoints,
+  buildReportSummary,
+  reportFileName,
+  resolveReportLogoUrl,
+} from "@/lib/patientReport";
+import { buildEvolutionChartGeometry } from "@/lib/patientReportChart";
 import { useClinicalConfig } from "@/hooks/useClinicalConfig";
+import { useStaffNames } from "@/hooks/useStaffNames";
 import type { FormField } from "@/lib/forms-store";
 import { cn } from "@/lib/utils";
 import { format, parseISO, isSameDay } from "date-fns";
@@ -78,7 +88,8 @@ const APPT_STATUS_LABEL: Record<string, string> = {
 const APPOINTMENT_SKIP_REASON_LABEL: Record<string, string> = {
   no_phone: "Paciente sem WhatsApp cadastrado.",
   archived: "Paciente está arquivado.",
-  outside_24h_no_template: "Fora da janela de 24h e sem template aprovado configurado em Configurações.",
+  outside_24h_no_template:
+    "Fora da janela de 24h e sem template aprovado configurado em Configurações.",
   template_not_found: "O template configurado para consulta não foi encontrado.",
   n8n_error: "Falha ao acionar o envio (n8n indisponível).",
   integration_not_configured: "Integração de envio não configurada.",
@@ -142,7 +153,8 @@ function PatientDetail() {
   const { id } = Route.useParams();
   const qc = useQueryClient();
   const { user } = useAuth();
-  const { data: clinicalConfig = DEFAULT_CLINICAL_CONFIG } = useClinicalConfig();
+  const { data: clinicalConfig = DEFAULT_CLINICAL_CONFIG, isSuccess: clinicalConfigLoaded } =
+    useClinicalConfig();
 
   const {
     data: patient,
@@ -172,7 +184,7 @@ function PatientDetail() {
     retry: false,
   });
 
-  const { data: responses = [] } = useQuery({
+  const { data: responses = [], isSuccess: responsesLoaded } = useQuery({
     queryKey: ["responses", id],
     queryFn: async () => {
       const { data, error } = (await supabase
@@ -267,13 +279,12 @@ function PatientDetail() {
     refetchIntervalInBackground: false,
   });
 
-  const { data: users = [] } = useQuery({
-    queryKey: ["users"],
-    queryFn: async () => {
-      const { data, error } = (await supabase.from("profiles").select("id, name")) as any;
-      if (error) throw error;
-      return data as Array<{ id: string; name: string }>;
-    },
+  const { data: users = [] } = useStaffNames();
+
+  const { data: branding } = useQuery({
+    queryKey: ["clinic-branding"],
+    queryFn: getClinicBranding,
+    staleTime: 5 * 60 * 1000,
   });
 
   const responsible = users.find((u) => u.id === patient?.responsibleId);
@@ -309,6 +320,44 @@ function PatientDetail() {
       else toast.warning("Não foi possível enviar (paciente sem telefone cadastrado ou arquivado)");
     },
     onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao enviar"),
+  });
+
+  const generateReport = useMutation({
+    mutationFn: async () => {
+      if (!patient) throw new Error("Paciente não carregado");
+      // Respostas e parâmetros clínicos ainda carregando: gerar agora produziria um
+      // relatório enganoso ("Sem dados"/"Dia 1 de 30") mesmo quando o paciente tem
+      // histórico — o relatório sai da clínica, então é melhor falhar alto aqui.
+      if (!responsesLoaded || !clinicalConfigLoaded) {
+        throw new Error("Dados do paciente ainda carregando, aguarde um instante.");
+      }
+      const [{ pdf }, { PatientReportDocument }] = await Promise.all([
+        import("@react-pdf/renderer"),
+        import("@/components/PatientReportDocument"),
+      ]);
+      const summary = buildReportSummary(patient, responses, clinicalConfig);
+      const geometry = summary.hasScorableData
+        ? buildEvolutionChartGeometry(
+            buildReportChartPoints(responses),
+            clinicalConfig.programLengthDays,
+            clinicalConfig,
+          )
+        : null;
+      const blob = await pdf(
+        <PatientReportDocument
+          clinicLogoUrl={resolveReportLogoUrl(branding?.logoUrl ?? null)}
+          summary={summary}
+          geometry={geometry}
+        />,
+      ).toBlob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = reportFileName(patient.name);
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+    onError: (e) => toast.error(e instanceof Error ? e.message : "Erro ao gerar relatório"),
   });
 
   const [draft, setDraft] = useState("");
@@ -586,6 +635,18 @@ function PatientDetail() {
                 <Send className="h-4 w-4 mr-2" />
               )}
               Enviar lembrete
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => generateReport.mutate()}
+              disabled={generateReport.isPending || !responsesLoaded || !clinicalConfigLoaded}
+            >
+              {generateReport.isPending ? (
+                <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+              ) : (
+                <FileDown className="h-4 w-4 mr-2" />
+              )}
+              Emitir relatório
             </Button>
           </div>
         </CardContent>

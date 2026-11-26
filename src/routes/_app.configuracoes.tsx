@@ -1091,11 +1091,20 @@ function AppointmentMessageCard() {
 
 /* ==================== TEMPLATES DE WHATSAPP (MODELOS DA META) ==================== */
 
-type TemplateSource = "patient_first_name" | "patient_full_name" | "form_link" | "appointment_datetime";
+type TemplateSource =
+  | "patient_first_name"
+  | "patient_full_name"
+  | "form_link"
+  | "appointment_datetime"
+  | "appointment_date"
+  | "appointment_time"
+  | "professional_name"
+  | "custom_text";
 
 interface TemplateParam {
   parameter_name: string;
   source: TemplateSource;
+  value?: string;
 }
 
 interface WhatsappTemplateRow {
@@ -1110,6 +1119,10 @@ const SOURCE_LABEL: Record<TemplateSource, string> = {
   patient_full_name: "Nome completo do paciente",
   form_link: "Link do formulário",
   appointment_datetime: "Data/hora da consulta agendada",
+  appointment_date: "Data da consulta",
+  appointment_time: "Hora da consulta",
+  professional_name: "Nome do profissional",
+  custom_text: "Texto fixo",
 };
 
 const EMPTY_TEMPLATE_FORM = {
@@ -1176,6 +1189,9 @@ function WhatsappTemplatesCard() {
       const name = form.name.trim();
       if (!name) throw new Error("Nome do template é obrigatório");
       const parameters = form.parameters.filter((p) => p.parameter_name.trim());
+      if (parameters.some((p) => p.source === "custom_text" && !p.value?.trim())) {
+        throw new Error("Preencha o texto fixo de todas as variáveis com essa fonte");
+      }
       const payload = { name, language: form.language.trim() || "pt_BR", parameters };
       if (editingId) {
         const { error } = await supabase
@@ -1396,31 +1412,54 @@ function WhatsappTemplatesCard() {
             <div className="space-y-2">
               <Label>Variáveis do template (na mesma ordem em que aparecem no texto)</Label>
               {form.parameters.map((p, idx) => (
-                <div key={idx} className="flex items-center gap-2">
-                  <Input
-                    className="flex-1"
-                    placeholder="nome da variável (ex: nome)"
-                    value={p.parameter_name}
-                    onChange={(e) => updateParam(idx, { parameter_name: e.target.value })}
-                  />
-                  <Select
-                    value={p.source}
-                    onValueChange={(v) => updateParam(idx, { source: v as TemplateSource })}
-                  >
-                    <SelectTrigger className="w-56">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {Object.entries(SOURCE_LABEL).map(([value, label]) => (
-                        <SelectItem key={value} value={value}>
-                          {label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                  <Button size="icon" variant="ghost" onClick={() => removeParam(idx)}>
-                    <X className="h-4 w-4" />
-                  </Button>
+                <div key={idx} className="space-y-1.5 rounded-md border p-2">
+                  <div className="flex items-center gap-2">
+                    <Input
+                      className="flex-1"
+                      placeholder="nome da variável (ex: nome)"
+                      value={p.parameter_name}
+                      onChange={(e) => updateParam(idx, { parameter_name: e.target.value })}
+                    />
+                    <Select
+                      value={p.source}
+                      onValueChange={(v) =>
+                        updateParam(idx, {
+                          source: v as TemplateSource,
+                          value: v === "custom_text" ? p.value : undefined,
+                        })
+                      }
+                    >
+                      <SelectTrigger className="w-56">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {Object.entries(SOURCE_LABEL).map(([value, label]) => (
+                          <SelectItem key={value} value={value}>
+                            {label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    <Button size="icon" variant="ghost" onClick={() => removeParam(idx)}>
+                      <X className="h-4 w-4" />
+                    </Button>
+                  </div>
+                  {p.source === "custom_text" && (
+                    <Input
+                      placeholder="texto fixo a ser enviado (ex: Vera PSI)"
+                      value={p.value ?? ""}
+                      onChange={(e) => updateParam(idx, { value: e.target.value })}
+                    />
+                  )}
+                  {(p.source === "appointment_datetime" ||
+                    p.source === "appointment_date" ||
+                    p.source === "appointment_time" ||
+                    p.source === "professional_name") && (
+                    <p className="text-xs text-muted-foreground">
+                      Só resolve de verdade no aviso de consulta agendada — em templates de
+                      lembrete ou de reabrir conversa, fica em branco.
+                    </p>
+                  )}
                 </div>
               ))}
               <Button variant="outline" size="sm" onClick={addParam}>

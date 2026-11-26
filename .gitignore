@@ -31,3 +31,9 @@ dist-ssr
 *.sln
 *.sw?
 .vercel
+
+# superpowers execution workspaces (ledgers, briefs, review packages)
+.superpowers/
+
+# Supabase CLI local cache (never linked to a project in this repo)
+supabase/.temp/

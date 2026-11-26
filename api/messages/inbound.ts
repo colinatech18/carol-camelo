@@ -1,16 +1,7 @@
 import type { VercelRequest, VercelResponse } from "@vercel/node";
-import { createHash, timingSafeEqual } from "node:crypto";
 import { internalError } from "../_lib/errorResponse.js";
 import { supabaseAdmin } from "../_lib/supabaseAdmin.js";
-
-// Comparação de tempo constante. Hasheia ambos para um buffer de tamanho fixo
-// antes de comparar: garante que timingSafeEqual não lance (exige mesmo tamanho)
-// e não vaza o comprimento do segredo.
-function safeEqual(a: string, b: string): boolean {
-  const ha = createHash("sha256").update(a).digest();
-  const hb = createHash("sha256").update(b).digest();
-  return timingSafeEqual(ha, hb);
-}
+import { safeEqual } from "../_lib/safeEqual.js";
 
 // Normaliza um telefone para comparação: remove tudo que não é dígito e garante o
 // DDI 55. Números com 10 ou 11 dígitos (DDD + número, sem código do país) recebem

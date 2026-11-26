@@ -5,7 +5,12 @@ export interface TemplateParamConfig {
     | "patient_full_name"
     | "form_link"
     | "appointment_datetime"
+    | "appointment_date"
+    | "appointment_time"
+    | "professional_name"
+    | "custom_text"
     | string;
+  value?: string;
 }
 
 export interface WhatsappTemplateRow {
@@ -23,13 +28,23 @@ export interface WhatsappTemplateRow {
  * (`{{nome}}`, `{{link}}`), não numeradas (`{{1}}`, `{{2}}`).
  *
  * Cadastrar um template novo em `whatsapp_templates` e apontar
- * `app_settings.reminder_template_id`/`reopen_template_id` pra ele NÃO exige
- * nenhuma mudança de código — só se precisar de uma fonte de variável nova
- * além de "patient_first_name" / "patient_full_name" / "form_link".
+ * `app_settings.reminder_template_id`/`reopen_template_id`/`appointment_template_id`
+ * pra ele NÃO exige nenhuma mudança de código, desde que use só as fontes já
+ * suportadas: "patient_first_name" / "patient_full_name" / "form_link" /
+ * "appointment_datetime" / "appointment_date" / "appointment_time" /
+ * "professional_name" / "custom_text" (texto digitado em `value`, no próprio
+ * cadastro do parâmetro — não depende do contexto de envio).
  */
 export function buildTemplatePayload(
   template: WhatsappTemplateRow,
-  ctx: { patientName: string; link?: string; appointmentDateTime?: string },
+  ctx: {
+    patientName: string;
+    link?: string;
+    appointmentDateTime?: string;
+    appointmentDate?: string;
+    appointmentTime?: string;
+    professionalName?: string;
+  },
 ) {
   const parameters = (template.parameters ?? []).map((p) => {
     let text = "";
@@ -45,6 +60,18 @@ export function buildTemplatePayload(
         break;
       case "appointment_datetime":
         text = ctx.appointmentDateTime ?? "";
+        break;
+      case "appointment_date":
+        text = ctx.appointmentDate ?? "";
+        break;
+      case "appointment_time":
+        text = ctx.appointmentTime ?? "";
+        break;
+      case "professional_name":
+        text = ctx.professionalName ?? "";
+        break;
+      case "custom_text":
+        text = p.value ?? "";
         break;
       default:
         text = "";

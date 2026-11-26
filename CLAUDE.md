@@ -5,66 +5,94 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 A patient-follow-up system for a mental-health clinic ("Vera PSI" in the UI), centered on a
-30-day program: patients fill a daily evolution diary via a public tokenized link, and the
-clinical team (admin / psychologist / psychiatrist) monitors progress, criticality, clinical
-records, and appointments. The UI is entirely in Brazilian Portuguese (`pt-BR`).
+configurable-length (default 30-day) program: patients fill a daily evolution diary via a public
+tokenized link, and the clinical team (admin / psychologist / psychiatrist) monitors progress,
+criticality, clinical records, and appointments. The UI is entirely in Brazilian Portuguese
+(`pt-BR`).
 
-This is a Lovable-generated project (`@lovable.dev/vite-tanstack-config`) built on **TanStack
-Start** (SSR React 19) and deployed to **Cloudflare Workers**.
+This is a plain **Vite SPA** using **TanStack Router** (client-side, file-based routing) and
+**React 19** — there is no SSR and no TanStack Start. It's deployed to **Vercel**: the built SPA
+is served as static files with a catch-all rewrite to `index.html` (`vercel.json`), and everything
+under `api/` deploys as Vercel serverless functions (`@vercel/node`).
 
 ## Commands
 
-Package manager is **Bun** (`bun.lock`, `bunfig.toml`).
+Package manager is **npm** (`package-lock.json`).
 
 ```bash
-bun install            # install deps
-bun run dev            # dev server (vite dev)
-bun run build          # production build (also targets Cloudflare Workers)
-bun run build:dev      # build with development mode
-bun run preview        # preview the production build
-bun run lint           # eslint .
-bun run format         # prettier --write .
-bunx tsc --noEmit      # type-check (no dedicated script; tsconfig is noEmit)
+npm install            # install deps
+npm run dev             # dev server (vite dev)
+npm run build            # production build
+npm run preview          # preview the production build
+npm run lint             # eslint .
+npm run format           # prettier --write .
+npx tsc --noEmit        # type-check (no dedicated script; tsconfig is noEmit)
 ```
 
-There is **no test suite** configured — do not assume `bun test` exists.
+There is no test script wired into `package.json`, but a real suite exists under `tests/` (pure
+logic + a handful of `api/` modules), run directly with:
 
-`bunfig.toml` enforces a 24h supply-chain guard (`minimumReleaseAge`): newly published package
-versions are skipped. Confirm with the user before adding any package to
-`minimumReleaseAgeExcludes`.
+```bash
+node --test tests/*.test.mjs
+```
+
+One file (`tests/inbound.test.mjs`) currently fails on recent Node versions due to an unrelated
+`node --test`/ESM module-resolution regression (`mock.module` / sibling `.ts`→`.js` resolution),
+not a real bug — this is a known, pre-existing environment issue, not something to "fix" by
+changing the test or the source it covers.
+
+**Hard constraint for everything under `api/`:** Vercel's build (`@vercel/node`) transpiles each
+traced `.ts` file to a same-named `.js` file **without rewriting import specifiers**. Any file
+under `api/` that imports a sibling module (including anything in `src/lib`) using an explicit
+`.ts` extension ships broken in production — the bundle only contains the `.js`-renamed output,
+but the import statement still says `.ts`. Every local/relative import inside `api/` must use a
+`.js` extension, even though the source file is `.ts`, with no exceptions. This is enforced by a
+static regression test (`tests/apiImportsNoTsExtension.test.mjs`) that scans `api/**/*.ts` for any
+`.ts`-extension import specifier and fails if one exists.
 
 ## Architecture
 
-### Data layer is the central abstraction — `src/services/`
+### Data layer — direct Supabase calls + Vercel functions, no abstraction layer
 
-All data access goes through `src/services/api.ts`. It exposes domain APIs (`api.auth`,
-`api.patients`, `api.forms`, `api.records`, `api.appointments`, `api.notifications`,
-`api.settings`) and **switches at runtime** between two backends:
+There is no `src/services/api.ts`-style data-access abstraction in active use. `src/services/api.ts`
+and `src/services/mockBackend.ts` still exist in the repo but have **zero imports anywhere** —
+they're dead code from an earlier mock-backend era. Do not add new endpoints there and do not
+treat them as documentation of current behavior.
 
-- **Real backend** when `VITE_API_URL` is set — Axios calls with `Bearer` token from
-  `localStorage` (`mh.token`), `withCredentials: true`.
-- **Mock backend** (`USE_MOCK === true`) when `VITE_API_URL` is empty — `src/services/mockBackend.ts`,
-  fully localStorage-backed (keys prefixed `mh.*`), self-seeds demo users/patients/responses on
-  first load. Every `api.*` method has a `USE_MOCK` branch.
+The real data layer is split by trust level:
 
-When adding an endpoint, add it to **both** the `USE_MOCK` branch (wired to `mockApi`) and the
-real HTTP branch in `api.ts`, and implement the mock in `mockBackend.ts`. Keep the two in sync.
+- **Route files read/write Supabase directly** with the anon key (`src/lib/supabase.ts`), relying
+  on Supabase RLS for authorization — e.g. `supabase.from("patients").select(...)` straight inside
+  a route component.
+- **Privileged or side-effecting actions go through `api/`** (Vercel serverless functions), using
+  `supabaseAdmin` (service-role key, never exposed to the browser) and `requireUser`/`requireAdmin`
+  from `api/_lib/requireAdmin.ts` for auth gating. This is where WhatsApp dispatch, appointment
+  creation, form submission, and the daily cron reminder live.
 
-### Two separate "forms" systems — don't confuse them
+### Forms — one system today, not two
 
-1. **Legacy daily questions** (`api.forms` + `Question`/`ResponseEntry` in `types.ts`): the 1–5
-   scale diary used by the public form (`/formulario/$token`) and criticality. Lives in the
-   `api.ts`/`mockBackend.ts` abstraction.
-2. **Multi-form builder** (`src/lib/forms-store.ts`, `FormDef`/`FormField`): a richer drag-and-drop
-   form designer (`/formularios`). This is a **standalone localStorage store** (`mh.forms.v2`),
-   *not* routed through `api.ts`. It self-seeds its own forms and is intentionally decoupled.
+`src/lib/forms-store.ts` (`FormDef`/`FormField`) is the **real, only** form-authoring system: it
+reads/writes the Supabase `forms` table, and forms built in `/formularios` are exactly what gets
+served to patients. The public diary (`/formulario/$token`) fetches and submits through
+`api/forms/get-by-token.ts` and `api/forms/submit.ts`, both backed by the same `forms` table.
+`src/lib/formQuestions.ts` (a hardcoded fixed set of 5 questions from an earlier iteration) is
+obsolete and unused — see the doc comment at the top of `forms-store.ts` for the migration note.
+
+The older `Question`/`ResponseEntry` vocabulary in `types.ts` is still very much alive, but at a
+different layer: it's how `form_responses` rows (whatever `FormField`s a given form actually has)
+get interpreted for criticality and reporting (`src/lib/criticality.ts`,
+`src/hooks/useEnrichedPatients.ts`, `src/lib/patientReport.ts`). It is not a competing form system,
+just the analysis-side shape of a response.
 
 ### Domain logic — `src/lib/criticality.ts` + `src/hooks/useEnrichedPatients.ts`
 
-Criticality (`red`/`yellow`/`green`/`unknown`) and `programDay` (1..30) are computed **client-side**
-from raw responses, not stored. `useEnrichedPatients()` joins patients with their responses via
-React Query and attaches `criticality`, `daysSinceLast`, and `programDay`. Use this hook rather
-than re-deriving these values. Red = avg of last 3 entries < 2.5; yellow ≤ 3.5; green above.
+Criticality (`red`/`yellow`/`green`/`unknown`) and `programDay` are computed **client-side** from
+raw responses, not stored. Program length and the red/yellow thresholds are configurable (stored
+in `app_settings`, read via `src/hooks/useClinicalConfig.ts`, with `DEFAULT_CLINICAL_CONFIG` in
+`criticality.ts` as the fallback) — **never hardcode the program length**; read
+`clinicalConfig.programLengthDays` instead. `useEnrichedPatients()` joins patients with their
+responses via React Query and attaches `criticality`, `daysSinceLast`, and `programDay`. Use this
+hook rather than re-deriving these values.
 
 ### Routing — TanStack Router, file-based
 
@@ -77,17 +105,10 @@ than re-deriving these values. Red = avg of last 3 entries < 2.5; yellow ≤ 3.5
 
 ### Auth — `src/lib/auth-context.tsx`
 
-`AuthProvider` (mounted in `__root.tsx`) holds the user, calls `authApi.me()` on mount if a token
-exists, and exposes `useAuth()`. Token persistence lives in `api.ts` (`getToken`/`setToken`).
-
-### SSR error handling — deliberate, don't simplify away
-
-`src/server.ts` is a **custom Cloudflare Worker entry** (wired via `vite.config.ts`
-`tanstackStart.server.entry: "server"`, not just `wrangler.jsonc`). It exists because h3 swallows
-in-handler throws into a generic `{"unhandled":true,"message":"HTTPError"}` 500 that `try/catch`
-never sees. The flow: `error-capture.ts` records the real error out-of-band → `server.ts` detects
-the swallowed-error body and renders a branded page via `error-page.ts`. `start.ts` adds matching
-request middleware. Preserve this machinery when touching server/error code.
+`AuthProvider` (mounted in `__root.tsx`) wraps **Supabase Auth** directly
+(`supabase.auth.signInWithPassword`, `supabase.auth.onAuthStateChange`,
+`supabase.auth.getSession()`) and exposes `useAuth()`. There is no separate token/localStorage
+scheme to maintain — session persistence is whatever the Supabase client already does.
 
 ### Appearance / theming — `src/lib/appearance.ts`
 
@@ -97,14 +118,9 @@ Theme color, light/dark/auto, contrast, locale, and date/time prefs persist in l
 
 ## Conventions
 
-- **Import alias:** `@/` → `src/` (e.g. `@/components/ui/button`, `@/lib/utils`, `@/services/api`).
+- **Import alias:** `@/` → `src/` (e.g. `@/components/ui/button`, `@/lib/utils`, `@/lib/supabase`).
 - **UI:** shadcn/ui (new-york style) in `src/components/ui/` + Tailwind v4. Use the `cn()` helper
   from `@/lib/utils`. Add components via the shadcn CLI (config in `components.json`); avoid hand-editing
   generated `ui/` primitives.
-- **Server-only modules:** do NOT import the Next.js `server-only` package (eslint blocks it). Use
-  `*.server.ts` or `@tanstack/react-start/server-only`.
-- **vite.config.ts:** `@lovable.dev/vite-tanstack-config` already includes tanstackStart, viteReact,
-  tailwindcss, tsConfigPaths, cloudflare, the `@` alias, and error loggers. Do **not** re-add these
-  plugins manually — it breaks the build. Extend via `defineConfig({ vite: { ... } })`.
 - **Formatting:** Prettier — 100 col, semicolons, double quotes, trailing commas (`all`).
 - Data fetching uses **TanStack React Query**; forms use **react-hook-form + zod**; toasts use **sonner**.

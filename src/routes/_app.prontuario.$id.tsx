@@ -14,6 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { supabase } from "@/lib/supabase";
+import { useStaffNames } from "@/hooks/useStaffNames";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
@@ -95,16 +96,7 @@ function PatientRecord() {
     },
   });
 
-  // profiles é legível por qualquer autenticado (mesmo padrão da tela de detalhe do paciente),
-  // então dá pra resolver o nome do autor de cada anotação.
-  const { data: profiles = [] } = useQuery({
-    queryKey: ["profiles"],
-    queryFn: async () => {
-      const { data, error } = (await supabase.from("profiles").select("id, name")) as any;
-      if (error) throw error;
-      return (data ?? []) as Array<{ id: string; name: string }>;
-    },
-  });
+  const { data: profiles = [] } = useStaffNames();
 
   const authorName = (aid: string) =>
     profiles.find((p) => p.id === aid)?.name ?? "Autor desconhecido";

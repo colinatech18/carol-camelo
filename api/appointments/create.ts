@@ -7,26 +7,16 @@ import {
   type WhatsappTemplateRow,
 } from "../_lib/whatsappTemplate.js";
 import { supabaseAdmin } from "../_lib/supabaseAdmin.js";
-import { APP_TIMEZONE } from "../../src/lib/criticality.js";
+import {
+  formatAppointmentDate,
+  formatAppointmentTime,
+  formatAppointmentDateTime,
+} from "../_lib/appointmentDateTimeFormat.js";
 
 const WINDOW_MS = 24 * 60 * 60 * 1000;
 const N8N_CALL_TIMEOUT_MS = 10_000;
 const DEFAULT_MESSAGE_TEMPLATE =
   "Olá {{name}}! Sua consulta foi agendada para {{datetime}}. Qualquer dúvida, é só chamar por aqui.";
-
-/** "quinta-feira, 13/11 às 09:00", no horário de Brasília. */
-function formatAppointmentDateTime(iso: string): string {
-  const parts = new Intl.DateTimeFormat("pt-BR", {
-    timeZone: APP_TIMEZONE,
-    weekday: "long",
-    day: "2-digit",
-    month: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-  }).formatToParts(new Date(iso));
-  const get = (type: string) => parts.find((p) => p.type === type)?.value ?? "";
-  return `${get("weekday")}, ${get("day")}/${get("month")} às ${get("hour")}:${get("minute")}`;
-}
 
 interface PatientRow {
   id: string;
@@ -44,6 +34,7 @@ interface PatientRow {
 async function sendAppointmentMessage(
   patient: PatientRow,
   scheduledAtIso: string,
+  professionalId: string | null,
 ): Promise<{ messageSent: boolean; skipReason?: string }> {
   const webhookUrl = process.env.N8N_SEND_WEBHOOK_URL;
   const secret = process.env.N8N_SEND_WEBHOOK_SECRET;
@@ -82,6 +73,8 @@ async function sendAppointmentMessage(
     ? Date.now() - new Date(lastInbound.created_at).getTime() < WINDOW_MS
     : false;
 
+  const appointmentDate = formatAppointmentDate(scheduledAtIso);
+  const appointmentTime = formatAppointmentTime(scheduledAtIso);
   const appointmentDateTime = formatAppointmentDateTime(scheduledAtIso);
   const bodyTemplateText = settings?.appointment_message_template || DEFAULT_MESSAGE_TEMPLATE;
   const message = renderTextTemplate(bodyTemplateText, {
@@ -105,10 +98,27 @@ async function sendAppointmentMessage(
       console.error("[appointments/create:template]", templateError);
       return { messageSent: false, skipReason: "template_not_found" };
     }
+    let professionalName = "";
+    if (professionalId) {
+      const { data: professional, error: professionalError } = await supabaseAdmin
+        .from("profiles")
+        .select("name")
+        .eq("id", professionalId)
+        .maybeSingle();
+      if (professionalError) {
+        console.error("[appointments/create:professional]", professionalError);
+      } else {
+        professionalName = professional?.name ?? "";
+      }
+    }
+
     channel = "template";
     templatePayload = buildTemplatePayload(templateRow as WhatsappTemplateRow, {
       patientName: patient.name,
       appointmentDateTime,
+      appointmentDate,
+      appointmentTime,
+      professionalName,
     });
   }
 
@@ -195,7 +205,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
   // A consulta já foi criada neste ponto — o aviso por WhatsApp é
   // best-effort e nunca desfaz o agendamento se falhar.
-  const dispatch = await sendAppointmentMessage(patient as PatientRow, scheduledAtIso);
+  const dispatch = await sendAppointmentMessage(patient as PatientRow, scheduledAtIso, professionalId);
 
   return res.status(200).json({ ok: true, appointmentId: appointment.id, ...dispatch });
 }
