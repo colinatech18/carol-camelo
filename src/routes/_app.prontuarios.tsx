@@ -4,6 +4,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { CriticalityBadge } from "@/components/CriticalityBadge";
 import { useEnrichedPatients } from "@/hooks/useEnrichedPatients";
+import { useClinicalConfig } from "@/hooks/useClinicalConfig";
+import { DEFAULT_CLINICAL_CONFIG } from "@/lib/criticality";
 import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
@@ -35,6 +37,7 @@ function RecordsHub() {
   // Pacientes vêm do Supabase (mesmo hook da tela de Pacientes), NÃO do mock em
   // localStorage — senão a lista mostra pacientes-demo que não existem no banco.
   const { data: patients = [], isLoading } = useEnrichedPatients();
+  const { data: clinicalConfig = DEFAULT_CLINICAL_CONFIG } = useClinicalConfig();
   const [q, setQ] = useState("");
 
   const filtered = useMemo(() => {
@@ -90,7 +93,7 @@ function RecordsHub() {
                       </div>
                     </div>
                     <span className="hidden sm:block text-xs text-muted-foreground shrink-0">
-                      Dia {p.programDay}/30
+                      Dia {p.programDay}/{clinicalConfig.programLengthDays}
                     </span>
                     <CriticalityBadge level={p.criticality} />
                     <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />

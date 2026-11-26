@@ -29,6 +29,7 @@ import {
 import { CriticalityBadge } from "@/components/CriticalityBadge";
 import { useEnrichedPatients } from "@/hooks/useEnrichedPatients";
 import { useClinicalConfig } from "@/hooks/useClinicalConfig";
+import { useStaffNames } from "@/hooks/useStaffNames";
 import { supabase } from "@/lib/supabase";
 import { getAuthHeader } from "@/lib/authHeader";
 import { averageOfEntry, brasiliaDateString, DEFAULT_CLINICAL_CONFIG } from "@/lib/criticality";
@@ -91,17 +92,7 @@ const CRIT_BAR: Record<string, string> = {
 function DashboardPage() {
   const { data: patients = [], isLoading } = useEnrichedPatients();
   const { data: clinicalConfig = DEFAULT_CLINICAL_CONFIG } = useClinicalConfig();
-  // Antes usava api.auth.listUsers (camada mock antiga em localStorage — mostrava
-  // profissionais fictícios, não a equipe real). Consulta direta ao Supabase,
-  // mesmo padrão já usado em Pacientes/Configurações.
-  const { data: users = [] } = useQuery({
-    queryKey: ["users"],
-    queryFn: async () => {
-      const { data, error } = (await supabase.from("profiles").select("id, name")) as any;
-      if (error) throw error;
-      return data as Array<{ id: string; name: string }>;
-    },
-  });
+  const { data: users = [] } = useStaffNames();
   const [responsibleFilter, setResponsibleFilter] = useState<string>("all");
 
   const filtered = useMemo(

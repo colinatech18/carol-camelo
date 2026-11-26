@@ -30,7 +30,9 @@ import { cn } from "@/lib/utils";
 import { format, parseISO } from "date-fns";
 import { ptBR } from "date-fns/locale";
 import { toast } from "sonner";
-import { brasiliaDateString } from "@/lib/criticality";
+import { brasiliaDateString, DEFAULT_CLINICAL_CONFIG } from "@/lib/criticality";
+import { useClinicalConfig } from "@/hooks/useClinicalConfig";
+import { useStaffNames } from "@/hooks/useStaffNames";
 import type { Patient } from "@/types";
 
 export const Route = createFileRoute("/_app/pacientes/")({ component: PatientsList });
@@ -104,15 +106,9 @@ function PatientsList() {
   const qc = useQueryClient();
   const navigate = useNavigate();
   const { data: allPatients = [], isLoading } = useEnrichedPatients({ includeArchived: true });
-  const { data: users = [] } = useQuery({
-    queryKey: ["users"],
-    queryFn: async () => {
-      const { data, error } = (await supabase.from("profiles").select("id, name")) as any;
-      if (error) throw error;
-      return data as Array<{ id: string; name: string }>;
-    },
-  });
+  const { data: users = [] } = useStaffNames();
   const { data: forms = [] } = useQuery({ queryKey: ["forms"], queryFn: listForms });
+  const { data: clinicalConfig = DEFAULT_CLINICAL_CONFIG } = useClinicalConfig();
   const activeForms = useMemo(() => forms.filter((f) => f.status === "active"), [forms]);
 
   const [q, setQ] = useState("");
@@ -577,7 +573,7 @@ function PatientsList() {
                 </TableHeader>
                 <TableBody>
                   {sorted.map((p) => {
-                    const pct = Math.round((p.programDay / 30) * 100);
+                    const pct = Math.round((p.programDay / clinicalConfig.programLengthDays) * 100);
                     const respName = userName(p.responsibleId);
                     const contact = [p.email, p.whatsapp].filter(Boolean).join(" · ");
                     const isSelected = selected.has(p.id);

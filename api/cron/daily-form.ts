@@ -3,6 +3,7 @@ import { internalError } from "../_lib/errorResponse.js";
 import { dispatchReminders, type DispatchResult } from "../_lib/dispatchReminders.js";
 import { supabaseAdmin } from "../_lib/supabaseAdmin.js";
 import { brasiliaDayStartIso } from "../../src/lib/criticality.js";
+import { safeEqual } from "../_lib/safeEqual.js";
 
 // O n8n só responde quando termina de enviar todos os pacientes do lote, então
 // lotes menores + timeout maior evitam estourar a espera em listas grandes.
@@ -25,7 +26,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
   const header = req.headers["x-cron-secret"];
   const provided = Array.isArray(header) ? header[0] : header;
-  if (!provided || provided !== secret) {
+  if (!provided || !safeEqual(provided, secret)) {
     return res.status(401).json({ error: "Unauthorized" });
   }
 
